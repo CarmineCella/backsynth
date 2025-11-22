@@ -124,7 +124,7 @@ std::ostream& print (AtomPtr e, std::ostream& out, bool write = false) {
 			else out << e->lexeme;
 		break;
 		case ARRAY:
-			print_valarray (e->array, out) << std::endl;
+			print_valarray (e->array, out) << "  ";
 		break;
 		case LAMBDA: case MACRO:
 			if (e->type == LAMBDA) out << "(lambda ";
@@ -171,23 +171,6 @@ AtomPtr type_check (AtomPtr node, AtomType t) {
 	if (node->type != t) error (err.str (), node);
 	return node;
 }
-class Later {
-public:
-	template <class callable, class... arguments>
-	Later(int after, bool async, callable&& f, arguments&&... args) {
-		std::function<typename std::result_of<callable(arguments...)>::type()> 
-			task(std::bind(std::forward<callable>(f), std::forward<arguments>(args)...));
-		if (async) {
-			std::thread([after, task]() {
-				std::this_thread::sleep_for(std::chrono::milliseconds(after));
-				task();
-			}).detach();
-		} else {
-			std::this_thread::sleep_for(std::chrono::milliseconds(after));
-			task();
-		}
-	}
-};
 
 // lexing, parsing, evaluation
 std::string next (std::istream &in, unsigned& linenum) {
@@ -339,7 +322,6 @@ AtomPtr fn_while (AtomPtr, AtomPtr) { return nullptr; } // dummy
 AtomPtr fn_begin (AtomPtr, AtomPtr) { return nullptr; } // dummy
 AtomPtr fn_apply (AtomPtr, AtomPtr) { return nullptr; } // dummy
 AtomPtr fn_eval (AtomPtr, AtomPtr) { return nullptr; } // dummy
-AtomPtr fn_schedule (AtomPtr node, AtomPtr env) { return make_atom (); } // dummy
 AtomPtr eval (AtomPtr node, AtomPtr env) {
 	StackGuard guard(node); 
 	while (true) {
@@ -402,15 +384,6 @@ AtomPtr eval (AtomPtr node, AtomPtr env) {
 			node = node->tail.at (node->tail.size () - 1);
 			continue; 
 		}
-        if (func->op == &fn_schedule) {
-            args_check (node, 4);
-            AtomPtr task = type_check (node->tail.at(1), LIST);
-            args_check (task, 1);
-            int msec = (int) type_check (eval (node->tail.at(2), env), ARRAY)->array[0];
-            bool async = (bool) type_check (eval (node->tail.at(3), env), ARRAY)->array[0];
-            Later sched (msec, async, &eval, task, env);
-            return make_atom (1);            
-        }		
 		AtomPtr args = make_atom();
 		for (unsigned i = 1; i < node->tail.size (); ++i) {
 			args->tail.push_back ((func->type == MACRO ? node->tail.at (i) : eval (node->tail.at (i), env)));
@@ -550,70 +523,124 @@ AtomPtr fn_lshuffle (AtomPtr node, AtomPtr env) {
 	std::shuffle (ll->tail.begin (), ll->tail.end (), g);
 	return ll;
 }
-void append_valarray(std::vector<Real>& dst, const std::valarray<Real>& src) {
-    dst.insert(dst.end(), std::begin(src), std::end(src));
+// void append_valarray(std::vector<Real>& dst, const std::valarray<Real>& src) {
+//     dst.insert(dst.end(), std::begin(src), std::end(src));
+// }
+// AtomPtr fn_array (AtomPtr node, AtomPtr env) {
+//     std::vector<Real> v;
+//     for (unsigned i = 0; i < node->tail.size (); ++i) {
+//         append_valarray (v, type_check (node->tail.at (i), ARRAY)->array);
+//     }
+// 	return make_atom (v);
+// }
+void list2array (AtomPtr list, std::vector<Real>& out) {
+	for (unsigned i = 0; i < list->tail.size (); ++i) {
+		if (list->tail.at (i)->type == LIST) {
+			list2array (list->tail.at (i), out);
+		}  else if (list->tail.at (i)->type == ARRAY) {
+				for (unsigned k = 0; k < list->tail.at (i)->array.size (); ++k) {
+				out.push_back (list->tail.at (i)->array[k]);
+			}
+		} else {
+			error ("numeric or list expected", list);
+		}
+	}
 }
+
 AtomPtr fn_array (AtomPtr node, AtomPtr env) {
-    std::vector<Real> v;
-    for (unsigned i = 0; i < node->tail.size (); ++i) {
-        append_valarray (v, type_check (node->tail.at (i), ARRAY)->array);
-    }
-	return make_atom (v);
+	std::vector<Real> res;
+	list2array (node, res);
+	std::valarray<Real> f (res.data (), res.size ());
+	return make_atom (f);
 }
+AtomPtr array2list (const std::valarray<Real>& out) {
+	AtomPtr list = make_atom ();
+	for (unsigned i = 0; i < out.size (); ++i) {
+		list->tail.push_back (make_atom (out[i]));
+	}
+	return list->tail.size () == 1 ? list->tail.at (0) : list;
+}    
+AtomPtr fn_array2list (AtomPtr node, AtomPtr env) {
+	return array2list (type_check (node->tail.at (0), ARRAY)->array);
+}       
 AtomPtr fn_eq (AtomPtr node, AtomPtr env) {
 	return make_atom ((Real) atom_eq (node->tail.at (0), node->tail.at (1)));
 }
-#define MAKE_ARRAYMETHOD(name, op)									\
-	AtomPtr name (AtomPtr node, AtomPtr env) {						\
-        std::valarray<Real> a = type_check (node->tail.at (0), ARRAY)->array; \
-        std::valarray<Real> b = type_check (node->tail.at (1), ARRAY)->array; \
-        std::valarray<Real> r (a.size ()); \
-        if (a.size () == 1) r = a[0] op b; \
-        else if (b.size () == 1) r = a op b[0]; \
-        else r = a op b; \
-        return make_atom (r); \
+#define MAKE_ARRAYBINOP(op,name) 	\
+	AtomPtr name (AtomPtr n, AtomPtr env) { 	\
+		std::valarray<Real> res (type_check (n->tail.at (0), ARRAY)->array); \
+		for (unsigned i = 1; i < n->tail.size (); ++i) {  \
+			std::valarray<Real>& a = type_check (n->tail.at (i), ARRAY)->array; \
+			if (a.size () == 1) res = res op a[0]; \
+			else res = res op a; \
+		} \
+		return make_atom (res); \
+	} \
+
+MAKE_ARRAYBINOP (+, fn_add);
+MAKE_ARRAYBINOP (-, fn_sub);
+MAKE_ARRAYBINOP (*, fn_mul);
+MAKE_ARRAYBINOP (/, fn_div);
+#define MAKE_ARRAYCMPOP(op,name) 	\
+	AtomPtr name (AtomPtr n, AtomPtr env) { 	\
+		std::valarray<bool> res; \
+		for (unsigned i = 0; i < n->tail.size () - 1; ++i) {  \
+			std::valarray<Real>& a = type_check (n->tail.at (i), ARRAY)->array; \
+			std::valarray<Real>& b = type_check (n->tail.at (i + 1), ARRAY)->array; \
+			std::valarray<bool> a_bool (a > 0); \
+			std::valarray<bool> b_bool (b > 0); \
+			if (b.size () == 1) res = a op  b[0]; \
+			else res = a op b; \
+			if (std::all_of(std::begin(res), std::end(res), [](bool i) { return !i; })) { \
+				break; \
+			} \
+		} \
+		std::valarray<Real> res_r (res.size ()); \
+		for (unsigned i = 0; i < res.size (); ++i) res_r[i] = (Real) res[i]; \
+		return make_atom (res_r); \
+	} \
+
+MAKE_ARRAYCMPOP (>, fn_greater);
+MAKE_ARRAYCMPOP (>=, fn_greatereq);
+MAKE_ARRAYCMPOP (<, fn_less);
+MAKE_ARRAYCMPOP (<=, fn_lesseq);
+#define MAKE_ARRAYMETHODS(op,name)									\
+	AtomPtr name (AtomPtr n, AtomPtr env) {						\
+		std::valarray<Real> res (n->tail.size ()); \
+		for (unsigned i = 0; i < n->tail.size (); ++i) { \
+			res[i] = (type_check (n->tail.at (i), ARRAY)->array.op ()); \
+		}\
+		return make_atom (res);\
 	}\
 
-MAKE_ARRAYMETHOD (fn_vadd, +);
-MAKE_ARRAYMETHOD (fn_vmul, *);
-MAKE_ARRAYMETHOD (fn_vsub, -);
-MAKE_ARRAYMETHOD (fn_vdiv, /);
-MAKE_ARRAYMETHOD (fn_less, <);
-MAKE_ARRAYMETHOD (fn_leq, <=);
-MAKE_ARRAYMETHOD (fn_greater, >);
-MAKE_ARRAYMETHOD (fn_geq, >=);
-
-#define MAKE_ARRAYOP(name, op)									\
-	AtomPtr name (AtomPtr node, AtomPtr env) {						\
-        std::valarray<Real> a = type_check (node->tail.at (0), ARRAY)->array; \
-		std::valarray<Real> r {(Real) a.op ()}; \
-        return make_atom(r);\
+MAKE_ARRAYMETHODS (min, fn_min);
+MAKE_ARRAYMETHODS (max, fn_max);
+MAKE_ARRAYMETHODS (sum, fn_sum);
+MAKE_ARRAYMETHODS (size, fn_size);
+#define MAKE_ARRAYSINGOP(op,name)									\
+	AtomPtr name (AtomPtr n, AtomPtr env) {						\
+		AtomPtr res = make_atom (); \
+		for (unsigned i = 0; i < n->tail.size (); ++i) { \
+			std::valarray<Real> v = op (type_check (n->tail.at (i), ARRAY)->array); \
+			res->tail.push_back (make_atom (v)); \
+		}\
+		return res->tail.size () == 1 ? res->tail.at (0) : res; \
 	}\
 
-MAKE_ARRAYOP (fn_min, min);
-MAKE_ARRAYOP (fn_max, max);
-MAKE_ARRAYOP (fn_sum, sum);
-MAKE_ARRAYOP (fn_size, size);
-#define MAKE_ARRAYFUN(name, op)									\
-	AtomPtr name (AtomPtr node, AtomPtr env) {						\
-        std::valarray<Real> a = type_check (node->tail.at (0), ARRAY)->array; \
-        std::valarray<Real> r {op (a)}; \
-        return make_atom (r); \
-	}\
-
-MAKE_ARRAYFUN (fn_sin, std::sin);
-MAKE_ARRAYFUN (fn_cos, std::cos);
-MAKE_ARRAYFUN (fn_tan, std::tan);
-MAKE_ARRAYFUN (fn_asin, std::asin);
-MAKE_ARRAYFUN (fn_acos, std::acos);
-MAKE_ARRAYFUN (fn_atan, std::atan);
-MAKE_ARRAYFUN (fn_sinh, std::sinh);
-MAKE_ARRAYFUN (fn_cosh, std::cosh);
-MAKE_ARRAYFUN (fn_tanh, std::tanh);
-MAKE_ARRAYFUN (fn_log, std::log);
-MAKE_ARRAYFUN (fn_log10, std::log10);
-MAKE_ARRAYFUN (fn_exp, std::exp);
-MAKE_ARRAYFUN (fn_abs, std::abs);
+MAKE_ARRAYSINGOP (std::abs, fn_abs);
+MAKE_ARRAYSINGOP (exp, fn_exp);
+MAKE_ARRAYSINGOP (log, fn_log);
+MAKE_ARRAYSINGOP (log10, fn_log10);
+MAKE_ARRAYSINGOP (sqrt, fn_sqrt);
+MAKE_ARRAYSINGOP (sin, fn_sin);
+MAKE_ARRAYSINGOP (cos, fn_cos);
+MAKE_ARRAYSINGOP (tan, fn_tan);
+MAKE_ARRAYSINGOP (asin, fn_asin);
+MAKE_ARRAYSINGOP (acos, fn_acos);
+MAKE_ARRAYSINGOP (atan, fn_atan);
+MAKE_ARRAYSINGOP (sinh, fn_sinh);
+MAKE_ARRAYSINGOP (cosh, fn_cosh);
+MAKE_ARRAYSINGOP (tanh, fn_tanh);
 AtomPtr fn_neg (AtomPtr n, AtomPtr env) {						
 	AtomPtr res = make_atom (); 
 	for (unsigned i = 0; i < n->tail.size (); ++i) { 
@@ -805,14 +832,13 @@ AtomPtr make_env () {
 	add_op ("quote", &fn_quote, -1, env); // -1 are checked in the handling function
 	add_op ("def", &fn_def, -1, env);
 	add_op ("=", &fn_set, -1, env);
-	add_op ("\\", &fn_lambda, -1, env);
+	add_op ("lamda", &fn_lambda, -1, env);
 	add_op ("macro", &fn_macro, -1, env);
 	add_op ("if", &fn_if, -1, env);
 	add_op ("while", &fn_while, -1, env);
 	add_op ("begin", &fn_begin, -1, env);
 	add_op ("eval", &fn_eval, 1, env);
 	add_op ("apply", &fn_apply, 2, env);
-	add_op ("schedule", &fn_schedule, -1, env);	
 	add_op ("env", &fn_env, 0, env);
 	add_op ("type", &fn_type, 1, env);    
 	add_op ("list", &fn_list, 0, env);
@@ -824,15 +850,16 @@ AtomPtr make_env () {
 	add_op ("llength", &fn_llength, 1, env);
 	add_op ("lshuffle", &fn_lshuffle, 1, env); 	
     add_op ("array", &fn_array, 0, env);    
+	add_op ("array2list", &fn_array2list, 1, env);
 	add_op ("==", &fn_eq, 2, env);
-    add_op ("+", &fn_vadd, 2, env);
-    add_op ("-", &fn_vsub, 2, env);
-    add_op ("*", &fn_vmul, 2, env);
-    add_op ("/", &fn_vdiv, 2, env);
+    add_op ("+", &fn_add, 2, env);
+    add_op ("-", &fn_sub, 2, env);
+    add_op ("*", &fn_mul, 2, env);
+    add_op ("/", &fn_div, 2, env);
     add_op ("<", &fn_less, 2, env);
-    add_op ("<=", &fn_leq, 2, env);
+    add_op ("<=", &fn_lesseq, 2, env);
     add_op (">", &fn_greater, 2, env);
-    add_op (">=", &fn_geq, 2, env);    
+    add_op (">=", &fn_greatereq, 2, env);    
     add_op ("min", &fn_min, 1, env);    
     add_op ("max", &fn_max, 1, env);    
     add_op ("sum", &fn_sum, 1, env);   
@@ -854,7 +881,7 @@ AtomPtr make_env () {
 	add_op ("floor", &fn_floor, 1, env);
 	add_op ("slice", fn_slice, 3, env);   
 	add_op ("assign", fn_assign, 4, env);     	
-	add_op ("display", &fn_print<false>, 1, env);
+	add_op ("print", &fn_print<false>, 1, env);
 	add_op ("save", &fn_print<true>, 2, env);
 	add_op ("read", &fn_read, 0, env);
     add_op ("str", &fn_string, 2, env);
