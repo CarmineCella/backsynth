@@ -1,6 +1,10 @@
-cmake_minimum_required(VERSION 2.8.9)
+cmake_minimum_required(VERSION 3.30)
+
 project (musil)
 
-add_subdirectory (src)
+add_compile_definitions (VERSION="0.1")
+add_compile_definitions (COPYRIGHT="2025")
+
+add_subdirectory (cli)
 
 

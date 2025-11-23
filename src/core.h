@@ -124,7 +124,7 @@ std::ostream& print (AtomPtr e, std::ostream& out, bool write = false) {
 			else out << e->lexeme;
 		break;
 		case ARRAY:
-			print_valarray (e->array, out) << "  ";
+			print_valarray (e->array, out);
 		break;
 		case LAMBDA: case MACRO:
 			if (e->type == LAMBDA) out << "(lambda ";

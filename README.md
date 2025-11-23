@@ -18,7 +18,7 @@ The core of the language is made of a single [C++ header](src/musil.h) (~ 1000 l
 * lambda functions with closures
 * macros
 
-For an example on how to integrate the language in your application, please check the [main file](src/musil.cpp).
+For an example on how to integrate the language in your application, please check the [main file](cli/musil.cpp).
 
 # Why the name *Musil*?
 
