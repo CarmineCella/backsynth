@@ -1,4 +1,4 @@
-// core.h
+// core.h -- core language components for Musil
 //
 
 #ifndef CORE_H

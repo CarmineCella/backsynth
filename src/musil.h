@@ -5,6 +5,7 @@
 #define MUSIL_H
 
 #include "core.h"
+#include "system.h"
 
 #define BOLDWHITE   "\033[1m\033[37m"
 #define BOLDBLUE    "\033[1m\033[34m"
@@ -15,7 +16,7 @@ AtomPtr make_env () {
     AtomPtr env = make_atom ();
     env->tail.push_back (make_atom ()); // no parent env
     add_core (env);
-    // add_system (env);
+    add_system (env);
     // add_signals (env);
     // add_learning (env);
     // add_plotting (env);
