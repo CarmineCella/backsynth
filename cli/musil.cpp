@@ -34,9 +34,7 @@ int main (int argc, char* argv[]) {
 			repl (cin, cout, env);
 		} else {
 			for (int i = optind; i < argc; ++i) {
-				if (!load (argv[i], cin, env)) {
-					std::cerr << "warning: cannot open input file " << argv[i] << std::endl;
-				}
+				load (argv[i], env);
 			}
 			if (interactive) repl (cin, cout, env);
 		}

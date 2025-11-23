@@ -790,7 +790,9 @@ AtomPtr fn_string (AtomPtr node, AtomPtr env) {
 	} 
 	return l;
 }
-AtomPtr load (const std::string&fname, std::istream& in, AtomPtr env) {
+AtomPtr load (const std::string&fname, AtomPtr env) {
+	std::ifstream in (fname);
+	if (!in.good ()) error ("cannot open input file", make_atom(fname));
 	AtomPtr r;
 	unsigned linenum = 0;
 	while (!in.eof ()) {
@@ -806,9 +808,7 @@ AtomPtr load (const std::string&fname, std::istream& in, AtomPtr env) {
 	return r;
 }
 AtomPtr fn_load (AtomPtr node, AtomPtr env) {
-	std::ifstream in (type_check (node->tail.at (0), STRING)->lexeme);
-	if (!in.good ()) error ("[load] cannot open input file", node);
-	return load (node->tail.at (0)->lexeme, in, env);
+	return load (type_check (node->tail.at (0), STRING)->lexeme, env);
 }
 AtomPtr fn_exec (AtomPtr node, AtomPtr env) {
 	return make_atom (system (type_check (node->tail.at (0), STRING)->lexeme.c_str ()));
@@ -830,7 +830,7 @@ AtomPtr add_core (AtomPtr env) {
 	add_op ("quote", &fn_quote, -1, env); // -1 are checked in the handling function
 	add_op ("def", &fn_def, -1, env);
 	add_op ("=", &fn_set, -1, env);
-	add_op ("lamda", &fn_lambda, -1, env);
+	add_op ("lambda", &fn_lambda, -1, env);
 	add_op ("macro", &fn_macro, -1, env);
 	add_op ("if", &fn_if, -1, env);
 	add_op ("while", &fn_while, -1, env);
@@ -873,6 +873,7 @@ AtomPtr add_core (AtomPtr env) {
 	add_op ("tanh", &fn_tanh, 1, env); 
 	add_op ("log", &fn_log, 1, env); 
 	add_op ("log10", &fn_log10, 1, env); 
+	add_op ("sqrt", &fn_sqrt, 1, env); 
 	add_op ("exp", &fn_exp, 1, env); 
 	add_op ("abs", &fn_abs, 1, env); 
 	add_op ("neg", &fn_neg, 1, env);
