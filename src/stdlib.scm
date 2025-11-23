@@ -7,17 +7,12 @@
 ;; ------------------------------------------------------------
 
 ;; schedule macro:
-;; (schedule EXPR DELAY)
+;; (schedule (lambda () ...) delay)
 ;; expands to:
-;;   (%schedule (quote EXPR) DELAY)
-;;
-;; so the expression is *not* evaluated immediately, only later.
+;;   (%schedule <that-lambda> delay)
 (def schedule
-  (macro (expr delay)
-    (list '%schedule
-          (list 'quote expr)
-          delay)))
-
+  (macro (thunk delay)
+    (list '%schedule thunk delay)))
 
 ;; function macro:
 ;; (function name (args...) body)

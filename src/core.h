@@ -18,6 +18,7 @@
 #include <algorithm>
 #include <iterator>
 #include <functional>
+#include <unordered_map>
 #include <cmath>
 
 // ast
@@ -332,18 +333,29 @@ AtomPtr extend (AtomPtr node, AtomPtr val, AtomPtr env, bool recurse = false) {
 	
 	return make_atom(); // dummy
 }
-AtomPtr clone(AtomPtr n) {
+AtomPtr clone_impl(AtomPtr n, std::unordered_map<Atom*, AtomPtr>& seen) {
+    if (!n) return nullptr;                    // preserve nullptr
+    // treat () as a fresh empty list
     if (is_nil(n)) return make_atom();
+    auto it = seen.find(n.get());
+    if (it != seen.end()) {
+        return it->second;                     // already cloned this node
+    }
     AtomPtr r = make_atom();
-    r->type   = n->type;
-    r->lexeme = n->lexeme;
-    r->array  = n->array;
-    r->op     = n->op;
+    seen[n.get()] = r;
+    r->type    = n->type;
+    r->lexeme  = n->lexeme;
+    r->array   = n->array;
+    r->op      = n->op;
     r->minargs = n->minargs;
     for (auto& t : n->tail) {
-        r->tail.push_back(clone(t));
+        r->tail.push_back(clone_impl(t, seen));
     }
     return r;
+}
+AtomPtr clone(AtomPtr n) {
+    std::unordered_map<Atom*, AtomPtr> seen;
+    return clone_impl(n, seen);
 }
 struct BreakException : public std::exception {
     const char* what() const noexcept override { return "break"; }

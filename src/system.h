@@ -24,25 +24,32 @@
 
 AtomPtr fn_schedule(AtomPtr node, AtomPtr env) {
     args_check(node, 2);
-    AtomPtr expr = node->tail.at(0);
+    AtomPtr thunk     = type_check(node->tail.at(0), LAMBDA);
     AtomPtr delayAtom = type_check(node->tail.at(1), ARRAY);
-    int delay_ms = static_cast<int>(delayAtom->array[0]);
-    AtomPtr expr_clone = clone(expr);
-    AtomPtr env_clone  = clone(env);
-
-    std::thread([expr_clone, env_clone, delay_ms]() {
+    int delay_ms      = static_cast<int>(delayAtom->array[0]);
+    AtomPtr thunk_clone = clone(thunk);
+    AtomPtr env_clone   = clone(env);
+    std::thread([thunk_clone, env_clone, delay_ms]() {
         try {
             std::this_thread::sleep_for(std::chrono::milliseconds(delay_ms));
-            eval(expr_clone, env_clone);
+            AtomPtr call = make_atom();
+            call->tail.push_back(thunk_clone);
+            eval(call, env_clone);
         } catch (const std::exception& e) {
             std::cerr << "[schedule] error: " << e.what() << std::endl;
         } catch (...) {
             std::cerr << "[schedule] unknown error" << std::endl;
         }
     }).detach();
-
-    // return ()
     return make_atom();
+}
+AtomPtr fn_sleep(AtomPtr params, AtomPtr env) {
+    std::valarray<Real>& a = type_check(params->tail.at(0), ARRAY)->array;
+    int delay_ms = static_cast<int>(a[0]);
+    if (delay_ms > 0) {
+        std::this_thread::sleep_for(std::chrono::milliseconds(delay_ms));
+    }
+    return make_atom(); // ()
 }
 AtomPtr fn_clock (AtomPtr params, AtomPtr env) {
     return make_atom (clock ());
@@ -181,13 +188,13 @@ AtomPtr fn_udpsend (AtomPtr n, AtomPtr env) {
 }
 AtomPtr add_system (AtomPtr env) {
     add_op ("%schedule", &fn_schedule, 2, env);
+    add_op ("sleep",  &fn_sleep,   1, env);
     add_op ("clock", &fn_clock, 0, env);
     add_op ("dirlist", &fn_dirlist, 1, env);
     add_op ("filestat", &fn_filestat, 1, env);
     add_op ("getvar", &fn_getvar, 1, env);
     add_op ("udpsend", &fn_udpsend, 3, env);
     add_op ("udprecv", &fn_udprecv, 2, env);
-
     return env;
 }
 
