@@ -236,6 +236,7 @@ AtomPtr read (std::istream& in, unsigned& linenum) {
 			if (n->lexeme == ")") break;
 			else l->tail.push_back (n);
 		}
+		std::cout << "FIXME -- "; print (l->tail.at (l->tail.size ()-1), std::cout) << std::endl;
 		return l;
 	} 
     else if (token == "\'") {
