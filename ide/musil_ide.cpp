@@ -5,7 +5,7 @@
 //  - Middle: single-line "listener" input (REPL)
 //  - Bottom: console text display for evaluation output
 //  - Draggable splitter between editor and bottom pane (listener+console)
-//  - Syntax highlighting (C-like style from FLTK example, can be adapted)
+//  - Musil-oriented syntax highlighting (comments, strings, parens, keywords)
 //  - Zoom in/out (View/Zoom In, View/Zoom Out)
 //  - Evaluate/Run Script (Cmd+R) and Evaluate/Run Selection (Cmd+E)
 //
@@ -33,6 +33,7 @@
 #include <cerrno>
 #include <cstring>
 #include <cstdlib>
+#include <cctype>
 
 #include "musil.h" // your interpreter core
 
@@ -61,9 +62,6 @@ AtomPtr musil_env;
 
 // font size for editor/console/listener
 int g_font_size = 14;
-
-// For (optional) split editor in highlight code; unused but needed by style code
-Fl_Text_Editor *app_split_editor = nullptr;
 
 // Style buffer for syntax highlighting
 Fl_Text_Buffer *app_style_buffer = nullptr;
@@ -443,263 +441,229 @@ void listener_eval_line() {
 }
 
 // -----------------------------------------------------------------------------
-// Syntax highlighting (taken from FLTK example, C-like)
+// Musil-oriented syntax highlighting
 // -----------------------------------------------------------------------------
 
-#define TS 14 // default editor textsize for styles
+// Styles:
+//  A - Plain
+//  B - Comment   ( ; ... end-of-line )
+//  C - String    ( "..." )
+//  D - Keyword   (def, lambda, if, ...)
+//  E - Paren     ( ( and ) )
 
 Fl_Text_Display::Style_Table_Entry styletable[] = {
-#ifdef TESTING_ATTRIBUTES
-  { FL_BLACK,      FL_COURIER,           TS }, // A - Plain
-  { FL_DARK_GREEN, FL_HELVETICA_ITALIC,  TS, Fl_Text_Display::ATTR_BGCOLOR,     FL_LIGHT2  }, // B - Line comments
-  { FL_DARK_GREEN, FL_HELVETICA_ITALIC,  TS, Fl_Text_Display::ATTR_BGCOLOR_EXT, FL_LIGHT2  }, // C - Block comments
-  { FL_BLUE,       FL_COURIER,           TS, Fl_Text_Display::ATTR_UNDERLINE },             // D - Strings
-  { FL_DARK_RED,   FL_COURIER,           TS, Fl_Text_Display::ATTR_GRAMMAR },               // E - Directives
-  { FL_DARK_RED,   FL_COURIER_BOLD,      TS, Fl_Text_Display::ATTR_STRIKE_THROUGH },        // F - Types
-  { FL_BLUE,       FL_COURIER_BOLD,      TS, Fl_Text_Display::ATTR_SPELLING },              // G - Keywords
-#else
-  { FL_BLACK,      FL_COURIER,           TS }, // A - Plain
-  { FL_DARK_GREEN, FL_HELVETICA_ITALIC,  TS }, // B - Line comments
-  { FL_DARK_GREEN, FL_HELVETICA_ITALIC,  TS }, // C - Block comments
-  { FL_BLUE,       FL_COURIER,           TS }, // D - Strings
-  { FL_DARK_RED,   FL_COURIER,           TS }, // E - Directives
-  { FL_DARK_RED,   FL_COURIER_BOLD,      TS }, // F - Types
-  { FL_BLUE,       FL_COURIER_BOLD,      TS }, // G - Keywords
-#endif
+    { FL_BLACK,      FL_COURIER,      14 },                 // A - plain
+    { FL_DARK_GREEN, FL_COURIER, 14 },                      // B - comments
+    { FL_BLUE,       FL_COURIER,      14 },                 // C - strings
+    { FL_DARK_RED,   FL_COURIER_BOLD, 14 },                 // D - keywords
+    { FL_DARK_BLUE,  FL_COURIER_BOLD, 14 }                  // E - parens
 };
 
 const int N_STYLES = sizeof(styletable) / sizeof(styletable[0]);
 
-// We keep the original C/C++ keyword/type lists (you can change to Musil keywords)
-const char *code_keywords[] = {
-  "and", "and_eq", "asm", "bitand", "bitor", "break", "case", "catch", "compl",
-  "continue", "default", "delete", "do", "else", "false", "for", "goto", "if",
-  "new", "not", "not_eq", "operator", "or", "or_eq", "return", "switch",
-  "template", "this", "throw", "true", "try", "while", "xor", "xor_eq"
+// Musil-ish keywords (extend as you like)
+const char* musil_keywords[] = {
+    "=", 
+    "%schedule",
+    "+",
+    "-",
+    "*",
+    "/",
+    "<",
+    "<=",
+    ">",
+    ">=",
+    "abs",
+    "acos",
+    "apply",
+    "array",
+    "array2list",
+    "asin",
+    "assign",
+    "atan",
+    "begin",
+    "break",
+    "clock",
+    "cos",
+    "cosh",
+    "def",
+    "dirlist",
+    "eval",
+    "exec",
+    "exit",
+    "exp",
+    "filestat",
+    "floor",
+    "if",
+    "info",
+    "lambda",
+    "lappend",
+    "lindex",
+    "length",
+    "let",
+    "list",
+    "llength",
+    "lrange",
+    "lreplace",
+    "lset",
+    "lshuffle",
+    "load",
+    "log",
+    "log10",
+    "macro",
+    "max",
+    "min",
+    "neg",
+    "print",
+    "read",
+    "save",
+    "schedule",
+    "sin",
+    "sinh",
+    "size",
+    "slice",
+    "sleep",
+    "sqrt",
+    "str",
+    "sum",
+    "tan",
+    "tanh",
+    "tostr",
+    "udprecv",
+    "udpsend",
+    "while"
 };
 
-const char *code_types[] = {
-  "auto", "bool", "char", "class", "const", "const_cast", "double",
-  "dynamic_cast", "enum", "explicit", "extern", "float", "friend", "inline",
-  "int", "long", "mutable", "namespace", "private", "protected", "public",
-  "register", "short", "signed", "sizeof", "static", "static_cast", "struct",
-  "template", "typedef", "typename", "union", "unsigned", "virtual", "void",
-  "volatile"
-};
+const int N_KEYWORDS = sizeof(musil_keywords) / sizeof(musil_keywords[0]);
 
-extern "C" {
-  int compare_keywords(const void *a, const void *b) {
-    return strcmp(*((const char **)a), *((const char **)b));
-  }
+bool is_ident_start(char c) {
+    return std::isalpha((unsigned char)c) || c == '_' || c == '!';
 }
 
-// Style parse helpers from FLTK example
+bool is_ident_char(char c) {
+    // allow typical Scheme-ish chars in symbols
+    return std::isalnum((unsigned char)c) ||
+           c == '_' || c == '!' || c == '?' ||
+           c == '-' || c == '+' || c == '*' ||
+           c == '/' || c == '<' || c == '>' || c == '=';
+}
 
-void style_parse(const char *text, char *style, int length) {
-  char       current;
-  int        col;
-  int        last;
-  char       buf[255], *bufptr;
-  const char *temp;
+bool is_keyword(const std::string& s) {
+    for (int i = 0; i < N_KEYWORDS; ++i) {
+        if (s == musil_keywords[i]) return true;
+    }
+    return false;
+}
 
-  // Style letters:
-  // A - Plain
-  // B - Line comments
-  // C - Block comments
-  // D - Strings
-  // E - Directives
-  // F - Types
-  // G - Keywords
+// Very simple Musil lexer -> style buffer
+void style_parse_musil(const char* text, char* style, int length) {
+    bool in_comment = false;
+    bool in_string  = false;
 
-  for (current = *style, col = 0, last = 0; length > 0; length--, text++) {
-    if (current == 'B' || current == 'F' || current == 'G') current = 'A';
-    if (current == 'A') {
-      if (col == 0 && *text == '#') {
-        current = 'E';
-      } else if (strncmp(text, "//", 2) == 0) {
-        current = 'B';
-        for (; length > 0 && *text != '\n'; length--, text++) *style++ = 'B';
-        if (length == 0) break;
-      } else if (strncmp(text, "/*", 2) == 0) {
-        current = 'C';
-      } else if (strncmp(text, "\\\"", 2) == 0) {
-        *style++ = current;
-        *style++ = current;
-        text++;
-        length--;
-        col += 2;
-        continue;
-      } else if (*text == '\"') {
-        current = 'D';
-      } else if (!last && (islower((*text)&255) || *text == '_')) {
-        for (temp = text, bufptr = buf;
-             (islower((*temp)&255) || *temp == '_') && bufptr < (buf + sizeof(buf) - 1);
-             *bufptr++ = *temp++) {
+    int i = 0;
+    while (i < length) {
+        char c = text[i];
+
+        if (in_comment) {
+            style[i] = 'B';
+            if (c == '\n') {
+                in_comment = false;
+            }
+            ++i;
+            continue;
         }
 
-        if (!islower((*temp)&255) && *temp != '_') {
-          *bufptr = '\0';
-          bufptr = buf;
-
-          if (bsearch(&bufptr, code_types,
-                      sizeof(code_types) / sizeof(code_types[0]),
-                      sizeof(code_types[0]), compare_keywords)) {
-            while (text < temp) {
-              *style++ = 'F';
-              text++;
-              length--;
-              col++;
+        if (in_string) {
+            style[i] = 'C';
+            if (c == '"' && (i == 0 || text[i-1] != '\\')) {
+                in_string = false;
             }
-            text--;
-            length++;
-            last = 1;
+            ++i;
             continue;
-          } else if (bsearch(&bufptr, code_keywords,
-                             sizeof(code_keywords) / sizeof(code_keywords[0]),
-                             sizeof(code_keywords[0]), compare_keywords)) {
-            while (text < temp) {
-              *style++ = 'G';
-              text++;
-              length--;
-              col++;
-            }
-            text--;
-            length++;
-            last = 1;
-            continue;
-          }
         }
-      }
-    } else if (current == 'C' && strncmp(text, "*/", 2) == 0) {
-      *style++ = current;
-      *style++ = current;
-      text++;
-      length--;
-      current = 'A';
-      col += 2;
-      continue;
-    } else if (current == 'D') {
-      if (strncmp(text, "\\\"", 2) == 0) {
-        *style++ = current;
-        *style++ = current;
-        text++;
-        length--;
-        col += 2;
-        continue;
-      } else if (*text == '\"') {
-        *style++ = current;
-        col++;
-        current = 'A';
-        continue;
-      }
+
+        // Not in comment/string:
+        if (c == ';') {
+            // start comment until end of line
+            in_comment = true;
+            style[i] = 'B';
+            ++i;
+            continue;
+        }
+
+        if (c == '"') {
+            in_string = true;
+            style[i] = 'C';
+            ++i;
+            continue;
+        }
+
+        if (c == '(' || c == ')') {
+            style[i] = 'E';
+            ++i;
+            continue;
+        }
+
+        if (is_ident_start(c)) {
+            int start = i;
+            int j = i + 1;
+            while (j < length && is_ident_char(text[j])) j++;
+            std::string ident(text + start, text + j);
+            char mode = is_keyword(ident) ? 'D' : 'A';
+            for (int k = start; k < j; ++k) {
+                style[k] = mode;
+            }
+            i = j;
+            continue;
+        }
+
+        // default
+        style[i] = 'A';
+        ++i;
     }
+}
 
-    if (current == 'A' && (*text == '{' || *text == '}')) *style++ = 'G';
-    else *style++ = current;
-    col++;
+// Style initialization: create style buffer for entire text
+void style_init() {
+    int len = app_text_buffer->length();
+    if (len < 0) len = 0;
 
-    last = isalnum((*text)&255) || *text == '_' || *text == '.';
+    char* text  = app_text_buffer->text();
+    char* style = new char[len + 1];
 
-    if (*text == '\n') {
-      col = 0;
-      if (current == 'B' || current == 'E') current = 'A';
+    if (!text) {
+        std::memset(style, 'A', len);
+    } else {
+        style_parse_musil(text, style, len);
     }
-  }
+    style[len] = '\0';
+
+    if (!app_style_buffer) {
+        app_style_buffer = new Fl_Text_Buffer(len);
+    }
+    app_style_buffer->text(style);
+
+    delete [] style;
+    if (text) free(text);
 }
 
-void style_unfinished_cb(int, void*) {
-  // nothing; left for completeness
-}
-
-void style_init(void) {
-  char *style = new char[app_text_buffer->length() + 1];
-  char *text  = app_text_buffer->text();
-
-  memset(style, 'A', app_text_buffer->length());
-  style[app_text_buffer->length()] = '\0';
-
-  if (!app_style_buffer)
-    app_style_buffer = new Fl_Text_Buffer(app_text_buffer->length());
-
-  style_parse(text, style, app_text_buffer->length());
-
-  app_style_buffer->text(style);
-  delete[] style;
-  free(text);
-}
-
-void style_update(
-    int        pos,
-    int        nInserted,
-    int        nDeleted,
-    int        /*nRestyled*/,
-    const char * /*deletedText*/,
-    void       *cbArg) {
-
-  int   start, end;
-  char  last, *style, *text;
-
-  if (nInserted == 0 && nDeleted == 0) {
-    app_style_buffer->unselect();
-    return;
-  }
-
-  if (nInserted > 0) {
-    style = new char[nInserted + 1];
-    memset(style, 'A', nInserted);
-    style[nInserted] = '\0';
-
-    app_style_buffer->replace(pos, pos + nDeleted, style);
-    delete[] style;
-  } else {
-    app_style_buffer->remove(pos, pos + nDeleted);
-  }
-
-  app_style_buffer->select(pos, pos + nInserted - nDeleted);
-
-  start = app_text_buffer->line_start(pos);
-  end   = app_text_buffer->line_end(pos + nInserted);
-  text  = app_text_buffer->text_range(start, end);
-  style = app_style_buffer->text_range(start, end);
-
-  if (start == end)
-    last = 0;
-  else
-    last = style[end - start - 1];
-
-  style_parse(text, style, end - start);
-
-  app_style_buffer->replace(start, end, style);
-  ((Fl_Text_Editor *)cbArg)->redisplay_range(start, end);
-
-  if (start == end || last != style[end - start - 1]) {
-    free(text);
-    free(style);
-
-    end   = app_text_buffer->length();
-    text  = app_text_buffer->text_range(start, end);
-    style = app_style_buffer->text_range(start, end);
-
-    style_parse(text, style, end - start);
-
-    app_style_buffer->replace(start, end, style);
-    ((Fl_Text_Editor *)cbArg)->redisplay_range(start, end);
-  }
-
-  free(text);
-  free(style);
+// Simple style_update: re-parse entire buffer when text changes
+void style_update(int, int, int, int, const char*, void* cbArg) {
+    style_init();
+    int end = app_text_buffer->length();
+    ((Fl_Text_Editor*)cbArg)->redisplay_range(0, end);
 }
 
 void menu_syntaxhighlight_callback(Fl_Widget* w, void*) {
     Fl_Menu_Bar* menu = static_cast<Fl_Menu_Bar*>(w);
-    const Fl_Menu_Item* syntaxt_item = menu->mvalue();
-    if (!syntaxt_item) return;
+    const Fl_Menu_Item* item = menu->mvalue();
+    if (!item) return;
 
-    if (syntaxt_item->value()) {
+    if (item->value()) {
         style_init();
         app_editor->highlight_data(app_style_buffer, styletable,
                                    N_STYLES,
-                                   'A', style_unfinished_cb, 0);
+                                   'A', nullptr, 0);
         app_text_buffer->add_modify_callback(style_update, app_editor);
     } else {
         app_text_buffer->remove_modify_callback(style_update, app_editor);
@@ -713,7 +677,6 @@ void menu_syntaxhighlight_callback(Fl_Widget* w, void*) {
 // -----------------------------------------------------------------------------
 
 void apply_font_size() {
-    // sync style table sizes too
     for (int i = 0; i < N_STYLES; ++i) {
         styletable[i].size = g_font_size;
     }
@@ -838,7 +801,11 @@ void build_main_editor_console_listener() {
     bottom_group->end();
 
     app_tile->add(bottom_group);
+
+    // Make tile resizable & set ranges so split behaves
     app_tile->resizable(app_editor);
+    app_tile->size_range(0, 50, 50); // min height for editor
+    app_tile->size_range(1, 50, 50); // min height for bottom group
     app_tile->end();
 
     app_window->resizable(app_tile);
@@ -852,14 +819,13 @@ void build_main_editor_console_listener() {
 
 void init_musil_env() {
     musil_env = make_env();
-    // Best-effort stdlib load; adapt paths as you wish
-    try {
-        load("stdlib.scm", musil_env);
-        console_append("[loaded stdlib.scm]\n");
-    } catch (...) {
-        console_append("[warning] could not load stdlib.scm]\n");
-    }
-    console_append("[Musil environment ready]\n\n");
+
+    std::stringstream out;
+    out << "[musil, version " << VERSION <<"]" << std::endl <<  std::endl;
+    out << "music scripting language" << std::endl;
+    out << "(c) " << COPYRIGHT << ", www.carminecella.com" << std::endl << std::endl;
+
+    console_append(out.str ().c_str ());
 }
 
 // -----------------------------------------------------------------------------
@@ -868,16 +834,6 @@ void init_musil_env() {
 
 int main(int argc, char **argv) {
     try {
-        Fl::scheme("oxy");   // set global scheme
-
-        Fl_Preferences prefs(Fl_Preferences::USER, "carminecella", "musil_ide");
-
-        int win_x = 100, win_y = 100, win_w = 800, win_h = 600;
-        prefs.get("win_x", win_x, win_x);
-        prefs.get("win_y", win_y, win_y);
-        prefs.get("win_w", win_w, win_w);
-        prefs.get("win_h", win_h, win_h);
-
         Fl::args_to_utf8(argc, argv);
 
         build_app_window();
@@ -888,20 +844,29 @@ int main(int argc, char **argv) {
         if (argc > 1 && argv[1] && argv[1][0] != '-') {
             load_file_into_editor(argv[1]);
         }
-        
+
         app_window->show(argc, argv);
-        app_window->resize (win_x, win_y, win_w, win_h);
 
         // Initialize Musil environment after UI is ready
         init_musil_env();
 
-        return Fl::run();
+        // Turn on syntax highlighting by default
+        {
+            // mark menu item checked
+            Fl_Menu_Item* item = const_cast<Fl_Menu_Item*>(
+                app_menu_bar->find_item("View/Syntax Highlighting"));
+            if (item) item->set();
+            style_init();
+            app_editor->highlight_data(app_style_buffer, styletable,
+                                       N_STYLES,
+                                       'A', nullptr, 0);
+            app_text_buffer->add_modify_callback(style_update, app_editor);
+        }
 
-         // save on exit
-        prefs.set("win_x", app_window->x());
-        prefs.set("win_y", app_window->y());
-        prefs.set("win_w", app_window->w());
-        prefs.set("win_h", app_window->h());
+        // Apply initial font size to all widgets/styles
+        apply_font_size();
+
+        return Fl::run();
     } catch (std::exception &e) {
         fl_alert("Fatal error: %s", e.what());
         return 1;
