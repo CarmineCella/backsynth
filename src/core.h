@@ -98,7 +98,6 @@ bool is_number (const std::string& tt) {
 	return dummy && dummy.eof ();
 }
 std::ostream& print_valarray(const std::valarray<Real>& v, std::ostream& out = std::cout) {
-
     if (v.size () != 1) out << "[";
     for (size_t i = 0; i < v.size(); ++i) {
         out << v[i];    
@@ -649,16 +648,6 @@ AtomPtr fn_lshuffle (AtomPtr node, AtomPtr env) {
 	std::shuffle (ll->tail.begin (), ll->tail.end (), g);
 	return ll;
 }
-// void append_valarray(std::vector<Real>& dst, const std::valarray<Real>& src) {
-//     dst.insert(dst.end(), std::begin(src), std::end(src));
-// }
-// AtomPtr fn_array (AtomPtr node, AtomPtr env) {
-//     std::vector<Real> v;
-//     for (unsigned i = 0; i < node->tail.size (); ++i) {
-//         append_valarray (v, type_check (node->tail.at (i), ARRAY)->array);
-//     }
-// 	return make_atom (v);
-// }
 void list2array (AtomPtr list, std::vector<Real>& out) {
 	for (unsigned i = 0; i < list->tail.size (); ++i) {
 		if (list->tail.at (i)->type == LIST) {
@@ -672,7 +661,6 @@ void list2array (AtomPtr list, std::vector<Real>& out) {
 		}
 	}
 }
-
 AtomPtr fn_array (AtomPtr node, AtomPtr env) {
 	std::vector<Real> res;
 	list2array (node, res);

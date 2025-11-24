@@ -26,7 +26,6 @@
           name
           (list 'lambda args body))))
 
-
 ;; when macro:
 ;; (when cond body)
 ;; expands to:
