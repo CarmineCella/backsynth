@@ -40,6 +40,21 @@
 #include <cstdlib>
 #include <cctype>
 
+#include <filesystem>
+#include <system_error>
+
+#ifdef __APPLE__
+#include <mach-o/dyld.h>
+#include <limits.h>
+#endif
+
+#ifdef _WIN32
+#include <windows.h>
+#endif
+
+namespace fs = std::filesystem;
+
+
 #include "musil.h" // your interpreter core
 
 // -----------------------------------------------------------------------------
@@ -264,6 +279,41 @@ void init_musil_env() {
 // File-related helpers
 // -----------------------------------------------------------------------------
 
+static std::string get_resources_dir() {
+#ifdef __APPLE__
+    // Try to detect macOS bundle: MyApp.app/Contents/MacOS/MyApp
+    char buf[PATH_MAX];
+    uint32_t size = sizeof(buf);
+    if (_NSGetExecutablePath(buf, &size) == 0) {
+        fs::path exe(buf);
+        fs::path macos_dir = exe.parent_path();          // .../Contents/MacOS
+        fs::path contents  = macos_dir.parent_path();    // .../Contents
+        fs::path resources = contents / "Resources";     // .../Contents/Resources
+        if (fs::exists(resources)) {
+            return resources.string();
+        }
+    }
+    // fallback: ./Resources relative to current dir
+    return (fs::current_path() / "Resources").string();
+
+#elif defined(_WIN32)
+    char buf[MAX_PATH];
+    DWORD len = GetModuleFileNameA(nullptr, buf, MAX_PATH);
+    if (len > 0) {
+        fs::path exe(buf);
+        fs::path resources = exe.parent_path() / "Resources";
+        if (fs::exists(resources)) {
+            return resources.string();
+        }
+    }
+    return (fs::current_path() / "Resources").string();
+
+#else
+    // Linux / other: ./Resources
+    return (fs::current_path() / "Resources").string();
+#endif
+}
+
 void load_file_into_editor(const char *filename) {
     if (app_text_buffer->loadfile(filename) == 0) {
         set_filename(filename);
@@ -273,6 +323,57 @@ void load_file_into_editor(const char *filename) {
                  filename,
                  strerror(errno));
     }
+}
+
+static bool install_musil_libraries() {
+    std::string src_dir_str = get_resources_dir();
+    fs::path src_dir(src_dir_str);
+
+    if (!fs::exists(src_dir) || !fs::is_directory(src_dir)) {
+        fl_alert("Resources directory not found:\n%s", src_dir_str.c_str());
+        return false;
+    }
+
+    fs::path dest_dir = fs::path(get_home_directory()) / ".musil";
+
+    std::error_code ec;
+    fs::create_directories(dest_dir, ec);
+    if (ec) {
+        fl_alert("Failed to create destination directory:\n%s", dest_dir.string().c_str());
+        return false;
+    }
+
+    int copied = 0;
+    ec.clear();
+
+    for (auto &entry : fs::directory_iterator(src_dir, ec)) {
+        if (ec) break;
+        if (!entry.is_regular_file()) continue;
+
+        fs::path p = entry.path();
+        if (p.extension() == ".scm") {
+            fs::path dest = dest_dir / p.filename();
+            std::error_code copy_ec;
+            fs::copy_file(p, dest, fs::copy_options::overwrite_existing, copy_ec);
+            if (!copy_ec) {
+                ++copied;
+            }
+        }
+    }
+
+    if (ec) {
+        fl_alert("Error while scanning Resources directory:\n%s", src_dir_str.c_str());
+        return false;
+    }
+
+    if (copied == 0) {
+        fl_alert("No .scm files found in Resources directory:\n%s", src_dir_str.c_str());
+        return false;
+    }
+
+    fl_message("Installed %d .scm file(s) into:\n%s",
+               copied, dest_dir.string().c_str());
+    return true;
 }
 
 void menu_quit_callback(Fl_Widget *, void *) {
@@ -519,6 +620,18 @@ void menu_paths_callback(Fl_Widget*, void*) {
     build_paths_dialog();
 }
 
+void menu_install_libraries_callback(Fl_Widget*, void*) {
+    int r = fl_choice(
+        "Install Musil libraries?\n\n"
+        "This will copy all *.scm files from the Resources folder\n"
+        "into your ~/.musil directory.",
+        "No", "Yes", nullptr
+    );
+
+    if (r == 1) { // "Yes"
+        install_musil_libraries();
+    }
+}
 
 // -----------------------------------------------------------------------------
 // Listener input widget
@@ -1149,6 +1262,7 @@ void build_app_menu_bar() {
     app_menu_bar->add("Evaluate/Run selection", FL_COMMAND + 'e', menu_run_selection_callback, nullptr, FL_MENU_DIVIDER);
     app_menu_bar->add("Evaluate/Reset environment", FL_COMMAND + 'j', menu_clear_env_callback, nullptr, FL_MENU_DIVIDER);
     app_menu_bar->add("Evaluate/Paths...",   0, menu_paths_callback);
+    app_menu_bar->add("Evaluate/Install libraries...", 0, menu_install_libraries_callback);
 
     // View
     app_menu_bar->add("View/Zoom in",           FL_COMMAND + '+', menu_zoom_in_callback);
