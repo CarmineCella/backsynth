@@ -98,12 +98,14 @@ bool is_number (const std::string& tt) {
 	return dummy && dummy.eof ();
 }
 std::ostream& print_valarray(const std::valarray<Real>& v, std::ostream& out = std::cout) {
-    out << "[";
+
+    if (v.size () != 1) out << "[";
     for (size_t i = 0; i < v.size(); ++i) {
         out << v[i];    
         if (i + 1 < v.size()) out << " ";
     }
-    out << "]";
+    if (v.size () != 1) out << "]";
+	out.flush ();
     return out;
 }
 std::ostream& print (AtomPtr e, std::ostream& out, bool write = false) {
@@ -139,6 +141,7 @@ std::ostream& print (AtomPtr e, std::ostream& out, bool write = false) {
 		break;
 		}
 	}
+	out.flush ();
 	return out;
 }
 void error (const std::string& msg, AtomPtr n) {
@@ -823,18 +826,29 @@ AtomPtr fn_assign (AtomPtr node, AtomPtr env) {
 	v1[std::slice(i, ct, stride)] = v2;
 	return make_atom (v1);
 }  
-template <bool WRITE>
-AtomPtr fn_print (AtomPtr node, AtomPtr env) {
-	std::ostream* out = &std::cout;
-	if (WRITE) {
-		out = new std::ofstream (type_check (node->tail.at (0), STRING)->lexeme);
-		if (!out->good ()) error ("[save] cannot create output file", node);
+template <int mode>
+AtomPtr fn_format (AtomPtr node, AtomPtr env) {
+	std::stringstream tmp;
+	for (unsigned i = mode == 2 ? 1 : 0; i < node->tail.size (); ++i) {
+		print (node->tail.at (i), tmp, mode == 2); // set write flag if necessary
 	}
-	for (unsigned int i = WRITE; i < node->tail.size (); ++i) {
-		print (node->tail.at (i), *out, WRITE);
+	switch (mode) {
+		case 0: // print
+			std::cout << tmp.str (); std::cout.flush ();
+			return make_atom ("");
+		break;
+		case 1: // to string
+			return make_atom ((std::string) "\"" + tmp.str ());
+		break;
+		case 2: // save
+			std::string fname = node->tail.at (0)->lexeme;
+			std::ofstream out (fname);
+			if (!out.good ()) return make_atom (0);
+			out << tmp.str ();
+			out.close ();
+			return make_atom(1);
+		break;	
 	}
-	if (WRITE) ((std::ofstream*) out)->close (); // downcast
-	return make_atom ("");
 }
 AtomPtr fn_read (AtomPtr node, AtomPtr env) {
     unsigned linenum = 0;
@@ -1012,8 +1026,9 @@ AtomPtr add_core (AtomPtr env) {
 	add_op ("floor", &fn_floor, 1, env);
 	add_op ("slice", fn_slice, 3, env);   
 	add_op ("assign", fn_assign, 4, env);     	
-	add_op ("print", &fn_print<false>, 1, env);
-	add_op ("save", &fn_print<true>, 2, env);
+	add_op ("print", &fn_format<0>, 1, env);
+	add_op ("tostr", &fn_format<1>, 1, env);
+	add_op ("save", &fn_format<2>, 2, env);
 	add_op ("read", &fn_read, 0, env);
     add_op ("str", &fn_string, 2, env);
 	add_op ("load", &fn_load, 0, env);
