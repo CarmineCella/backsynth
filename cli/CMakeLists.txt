@@ -1,3 +1,5 @@
+cmake_minimum_required(VERSION 3.12)
+
 project (musil)
 
 SET(CMAKE_CXX_FLAGS "-Wall -g -O2 -std=c++17 -I . -Wunused-function -Wno-return-type-c-linkage")
