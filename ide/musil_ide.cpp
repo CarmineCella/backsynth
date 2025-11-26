@@ -4,7 +4,6 @@
 //  - go to line
 //  - improved About
 //  - tab 4 chars
-//  - improve run (slow, by line, wrong try...)
 //  - eval in different thread
 //
 
@@ -141,6 +140,8 @@ void menu_zoom_in_callback(Fl_Widget*, void*);
 void menu_zoom_out_callback(Fl_Widget*, void*);
 void menu_syntaxhighlight_callback(Fl_Widget*, void*);
 void menu_clear_console_callback(Fl_Widget*, void*);
+
+void menu_about_callback(Fl_Widget*, void*);
 
 // Listener
 void listener_eval_line();
@@ -939,7 +940,7 @@ public:
     }
 };
 
-void eval_string_in_musil(const std::string &code, bool is_script = false);
+void eval_code(const std::string &code, bool is_script = false);
 
 void listener_eval_line() {
     if (!app_listener) return;
@@ -955,7 +956,7 @@ void listener_eval_line() {
     g_listener_history_pos = (int)g_listener_history.size();
 
     console_append(">> " + line + "\n");
-    eval_string_in_musil(line);
+    eval_code(line);
     console_append("\n");
     app_listener->value("");
 }
@@ -964,13 +965,14 @@ void listener_eval_line() {
 // Evaluate helpers / menu handlers
 // -----------------------------------------------------------------------------
 
-void eval_string_in_musil(const std::string &code, bool is_script) {
+void eval_code (const std::string &code, bool is_script) {
     CoutRedirect redirect;
-    try {
-        std::istringstream in(code);
-        unsigned linenum = 0;
 
-        while (true) {
+    std::istringstream in(code);
+    unsigned linenum = 0;
+
+    while (true) {
+        try {
             AtomPtr expr = read(in, linenum);
             if (!expr && in.eof()) break;
             if (!expr) continue;
@@ -981,28 +983,23 @@ void eval_string_in_musil(const std::string &code, bool is_script) {
                 std::ostringstream oss;
                 print(res, oss);
                 oss << "\n";
-                std::cout << oss.str();
+                std::cout << oss.str ();
             }
-        }
-    } catch (AtomPtr &e) {
-        std::ostringstream oss;
-        oss << "error: ";
-        print(e, oss);
-        oss << "\n";
-        std::cout << oss.str();
-    } catch (std::exception &e) {
-        std::cout << "exception: " << e.what() << "\n";
-    } catch (...) {
-        std::cout << "fatal unknown error\n";
+        } catch (std::exception &e) {
+            if (is_script) {
+                if (app_filename[0]) std::cout << "[" << app_filename << ":" << linenum << "] ";
+                else std::cout << "line " << linenum << ": ";
+            } 
+            std::cout << e.what() << "\n";
+        } catch (...) {
+            std::cout << "fatal unknown error\n";
+        } 
     }
-
     std::string out = redirect.str();
-    if (!out.empty())
-        console_append(out);
+    if (!out.empty()) console_append(out);
 
-    update_keywords_from_env_and_browser();
+    update_keywords_from_env_and_browser();    
 }
-
 void menu_run_script_callback(Fl_Widget*, void*) {
     console_append("[Run script]\n");
 
@@ -1014,8 +1011,8 @@ void menu_run_script_callback(Fl_Widget*, void*) {
 
     std::string code(text);
     free(text);
-
-    eval_string_in_musil(code, true);
+    console_append("here\n");
+    eval_code(code, true);
     console_append("\n");
 }
 
@@ -1037,7 +1034,7 @@ void menu_run_selection_callback(Fl_Widget*, void*) {
     free(sel);
 
     console_append("[Run selection]\n");
-    eval_string_in_musil(code, true);
+    eval_code(code, false);
     console_append("\n");
 }
 
@@ -1468,7 +1465,7 @@ void var_browser_cb(Fl_Widget *w, void *) {
 
     std::string code = name;
     console_append(">> " + code + "\n");
-    eval_string_in_musil(code);
+    eval_code(code);
     console_append("\n");
 }
 
@@ -1520,6 +1517,7 @@ void build_app_menu_bar() {
     app_menu_bar->add("View/Clear console",  FL_COMMAND + 'k', menu_clear_console_callback);
     // app_menu_bar->add("View/Syntax highlighting", 0, menu_syntaxhighlight_callback, nullptr, FL_MENU_TOGGLE);
 
+    app_menu_bar->add("Help/About...",  0, menu_about_callback);
     app_window->callback(menu_quit_callback);
     app_window->end();
 }
@@ -1638,6 +1636,21 @@ void build_main_editor_console_listener() {
     app_window->resizable(app_tile);
     app_window->end();
     app_tile->init_sizes();
+
+    #if __APPLE__ 
+        // fl_mac_set_about (menu_about_callback, (void*) nullptr, 0);
+    #endif
+}
+
+void menu_about_callback(Fl_Widget*, void*) {
+    std::ostringstream oss;
+    oss << "Musil IDE\n\n";
+    oss << "Version " << VERSION << "\n";
+    oss << "Music scripting language and IDE\n\n";
+    oss << "(c) " << COPYRIGHT << "\n";
+    oss << "www.carminecella.com";
+
+    fl_message("%s", oss.str().c_str());
 }
 
 // -----------------------------------------------------------------------------
@@ -1681,6 +1694,7 @@ int main(int argc, char **argv) {
         }
 
         apply_font_size();
+        update_title ();
 
         return Fl::run();
     } catch (std::exception &e) {

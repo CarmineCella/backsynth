@@ -43,7 +43,7 @@ int main (int argc, char* argv[]) {
 			if (interactive) repl (cin, cout, env);
 		}
 	} catch (AtomPtr& e) {
-		cerr << RED << "error: "; print (e, cout) << RESET << std::endl;
+		cerr << RED << "fffferror: "; print (e, cout) << RESET << std::endl;
 	} catch (exception& e) {
 		cerr << RED << "exception: " << e.what () << RESET << std::endl;
 	} catch (...) {

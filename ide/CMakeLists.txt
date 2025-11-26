@@ -5,6 +5,9 @@
 #
 cmake_minimum_required(VERSION 3.12)
 
+
+SET(CMAKE_CXX_FLAGS "-Wall -g -O2 -std=c++17 -I . -Wunused-function -Wno-return-type-c-linkage")
+
 option(BUILD_MUSIL_IDE "Build the FLTK-based Musil IDE" ON)
 
 if(NOT BUILD_MUSIL_IDE)
