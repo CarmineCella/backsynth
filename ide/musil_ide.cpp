@@ -4,6 +4,9 @@
 //  - go to line
 //  - improved About
 //  - tab 4 chars
+//  - improve run (slow, by line, wrong try...)
+//  - eval in different thread
+//
 
 #include <FL/Fl.H>
 #include <FL/Fl_Double_Window.H>
