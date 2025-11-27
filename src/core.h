@@ -414,7 +414,7 @@ AtomPtr clone(AtomPtr n) {
     return clone_impl(n, seen);
 }
 struct BreakException : public std::exception {
-    const char* what() const noexcept override { return "break"; }
+    const char* what() const noexcept override { return "unhandled break"; }
 };
 AtomPtr fn_break (AtomPtr, AtomPtr) { return nullptr; } // dummy
 AtomPtr fn_quote (AtomPtr, AtomPtr) { return nullptr; } // dummy
