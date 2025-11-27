@@ -38,7 +38,8 @@ endif()
 # Installation
 #
 # 1) Install the executable under "bin" in the install prefix.
-# 2) Install stdlib.scm into $HOME/.musil (non-standard, but matches your previous behavior).
+# 2) Install stdlib.scm under a data directory inside the prefix
+#    (e.g. ${CMAKE_INSTALL_PREFIX}/share/musil).
 #
 
 # Install CLI binary under ${CMAKE_INSTALL_PREFIX}/bin
@@ -46,7 +47,7 @@ install(TARGETS musil
     RUNTIME DESTINATION bin
 )
 
-# Install stdlib into ~/.musil so both CLI and IDE can find it
+# Install stdlib.scm under ${CMAKE_INSTALL_PREFIX}/share/musil
 install(FILES ${CMAKE_SOURCE_DIR}/src/stdlib.scm
-    DESTINATION $ENV{HOME}/.musil
+    DESTINATION share/musil
 )
