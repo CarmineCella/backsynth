@@ -1,26 +1,52 @@
-cmake_minimum_required(VERSION 3.12)
+# cli/CMakeLists.txt
+#
+# Command-line Musil interpreter.
+# Uses musil.cpp and the header-only core in ../src.
 
-project (musil)
+# No cmake_minimum_required() or project() here:
+# they are defined at the top level.
 
-SET(CMAKE_CXX_FLAGS "-Wall -g -O2 -std=c++17 -I . -Wunused-function -Wno-return-type-c-linkage")
+add_executable(musil
+    musil.cpp
+)
 
-add_executable(musil musil.cpp ../src/musil.h ../src/core.h)
-
-set_target_properties(musil PROPERTIES LINK_FLAGS "-Wl,-rpath,./")
-
+# Include the core headers
 target_include_directories(musil
-    PUBLIC
-		  ${PROJECT_BINARY_DIR}/../src/
-    	   ${PROJECT_SOURCE_DIR}/../src/
- )
+    PRIVATE
+        ${CMAKE_SOURCE_DIR}/src
+)
 
+# C++ standard and warnings/optimizations (per-target, not global)
+target_compile_features(musil PRIVATE cxx_std_17)
 
-target_link_libraries (musil ${LIBS})
+if (MSVC)
+    target_compile_options(musil PRIVATE /W4)
+else()
+    target_compile_options(musil PRIVATE
+        -Wall
+        -g
+        -O2
+        -Wunused-function
+        -Wno-return-type-c-linkage
+    )
+endif()
 
-INSTALL(PROGRAMS ../src/stdlib.scm DESTINATION $ENV{HOME}/.musil)
-INSTALL(
-    TARGETS musil
+# If you need extra libs for the CLI, add them here, e.g.:
+# target_link_libraries(musil PRIVATE some_lib)
+
+#
+# Installation
+#
+# 1) Install the executable under "bin" in the install prefix.
+# 2) Install stdlib.scm into $HOME/.musil (non-standard, but matches your previous behavior).
+#
+
+# Install CLI binary under ${CMAKE_INSTALL_PREFIX}/bin
+install(TARGETS musil
     RUNTIME DESTINATION bin
-    LIBRARY DESTINATION $ENV{HOME}/.musil
-    ARCHIVE DESTINATION $ENV{HOME}/.musil)
+)
 
+# Install stdlib into ~/.musil so both CLI and IDE can find it
+install(FILES ${CMAKE_SOURCE_DIR}/src/stdlib.scm
+    DESTINATION $ENV{HOME}/.musil
+)

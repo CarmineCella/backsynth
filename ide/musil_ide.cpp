@@ -670,7 +670,6 @@ void update_keywords_from_env_and_browser() {
 }
 
 void init_musil_env() {
-    // Install musil_ide_yield as the default yield hook for this env
     musil_env = make_env(musil_ide_yield);
 
     load_env_paths(musil_env);

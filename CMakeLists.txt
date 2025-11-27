@@ -1,15 +1,17 @@
-cmake_minimum_required(VERSION 3.30)
+cmake_minimum_required(VERSION 3.16)
 
-project (musil)
+project(musil LANGUAGES CXX)
 
-add_compile_definitions (VERSION="0.1")
-add_compile_definitions (COPYRIGHT="2025")
+# Global compile definitions (visible to all targets)
+add_compile_definitions(VERSION="0.1")
+add_compile_definitions(COPYRIGHT="2025")
 
-add_subdirectory (cli)
-option(BUILD_MUSIL_IDE "Build Musil IDE" OFF)
+# Options
+option(BUILD_MUSIL_IDE "Build Musil FLTK-based IDE" OFF)
+
+# Subdirectories
+add_subdirectory(cli)
+
 if(BUILD_MUSIL_IDE)
     add_subdirectory(ide)
 endif()
-
-
-
