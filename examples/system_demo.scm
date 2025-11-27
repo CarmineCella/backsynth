@@ -1,12 +1,6 @@
 ;; system_demo.scm
 ;;
-;; Overview of the Musil system library primitives:
-;;  - clock
-;;  - dirlist
-;;  - filestat
-;;  - getvar
-;;  - udpsend / udprecv (only usage example here)
-;;  - schedule (macro from stdlib, expanding to %schedule)
+;; Overview of the Musil system library primitives
 
 (load "stdlib.scm")
 
@@ -98,3 +92,7 @@
 (print "  (udpsend \"127.0.0.1\" (array 9000) \"/test\" (array 1))\n\n")
 
 (print "=== end of system_demo.scm ===\n")
+
+
+;; eof
+

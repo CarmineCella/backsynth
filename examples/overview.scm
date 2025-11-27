@@ -1,6 +1,7 @@
-;; --------------------------------
-;; Musil overview (Scheme-like DSL)
-;; --------------------------------
+;; overview.scm
+;;
+;; Demonstrates the basic functionalities of the language
+
 
 ;; load standard library (defines macros: function, when, unless, let, schedule, ...)
 (load "stdlib.scm")
@@ -370,3 +371,6 @@
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 
 (print "that's all folks!\n")
+
+;; eof
+

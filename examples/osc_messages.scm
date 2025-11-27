@@ -1,6 +1,6 @@
-;; ---------------------------------------
-;; Example: communication with Max via OSC
-;; ---------------------------------------
+;; osc_messages.scm
+;;
+;; Communication with Max via OSC
 
 (load "stdlib.scm")
 

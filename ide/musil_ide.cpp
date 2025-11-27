@@ -1,12 +1,13 @@
 // musil_ide.cpp - WITH THREADING SUPPORT
 
 // TODO:
-//  - go to line
-//  - improved About
 //  - tab 4 chars
 //
 
 #include <FL/Fl.H>
+#ifdef __APPLE__
+    #include <FL/x.H>
+#endif
 #include <FL/Fl_Double_Window.H>
 #include <FL/Fl_Menu_Bar.H>
 #include <FL/Fl_Text_Editor.H>
@@ -1017,13 +1018,9 @@ public:
 
     int handle(int ev) override {
         int ret = Fl_Text_Editor::handle(ev);
-
+        
         if (ev == FL_KEYDOWN) {
             if (Fl::event_key() == FL_Tab && (Fl::event_state() & FL_CTRL)) {
-                do_autocomplete();
-                return 1;
-            }
-            if (Fl::event_key() == ' ' && (Fl::event_state() & FL_CTRL)) {
                 do_autocomplete();
                 return 1;
             }
@@ -1364,6 +1361,44 @@ void menu_delete_callback(Fl_Widget*, void*) {
         Fl_Text_Editor::kf_delete(0, (Fl_Text_Editor*)e);
 }
 
+void menu_goto_line_callback(Fl_Widget*, void*) {
+    if (!app_editor || !app_text_buffer) return;
+    
+    // Get current line for default value
+    int current_pos = app_editor->insert_position();
+    int current_line = app_text_buffer->count_lines(0, current_pos) + 1;
+    
+    // Show input dialog
+    const char* input = fl_input("Go to line:", std::to_string(current_line).c_str());
+    if (!input) return;
+    
+    // Parse line number
+    int line_num = atoi(input);
+    if (line_num < 1) {
+        fl_alert("Invalid line number. Please enter a number >= 1.");
+        return;
+    }
+    
+    int total_lines = app_text_buffer->count_lines(0, app_text_buffer->length());
+    if (line_num > total_lines) {
+        fl_alert("Line %d is beyond the last line (%d).", line_num, total_lines);
+        return;
+    }
+    
+    // Calculate position of target line
+    int pos = app_text_buffer->skip_lines(0, line_num - 1);
+    
+    // Move cursor and select line
+    app_editor->insert_position(pos);
+    app_editor->show_insert_position();
+    
+    int line_start = pos;
+    int line_end = app_text_buffer->line_end(pos);
+    app_text_buffer->select(line_start, line_end);
+    
+    app_editor->redraw();
+}
+    
 // -----------------------------------------------------------------------------
 // File menu callbacks
 // -----------------------------------------------------------------------------
@@ -1749,7 +1784,8 @@ void build_app_menu_bar() {
     app_menu_bar->add("Edit/Delete",      0,                menu_delete_callback, nullptr, FL_MENU_DIVIDER);
     app_menu_bar->add("Edit/Find...",     FL_COMMAND + 'f', menu_find_dialog_callback);
     app_menu_bar->add("Edit/Find next",   FL_COMMAND + 'g', menu_find_next_callback);
-    app_menu_bar->add("Edit/Replace...",  FL_COMMAND + 'h', menu_find_dialog_callback);
+    app_menu_bar->add("Edit/Replace...",  FL_COMMAND + 'h', menu_find_dialog_callback, nullptr, FL_MENU_DIVIDER);
+    app_menu_bar->add("Edit/Go to Line...",   FL_COMMAND + 'l', menu_goto_line_callback);
 
     // Evaluate
     app_menu_bar->add("Evaluate/Run script",         FL_COMMAND + 'r', menu_run_script_callback);
@@ -1765,7 +1801,10 @@ void build_app_menu_bar() {
     app_menu_bar->add("View/Clear console",  FL_COMMAND + 'k', menu_clear_console_callback);
     // app_menu_bar->add("View/Syntax highlighting", 0, menu_syntaxhighlight_callback, nullptr, FL_MENU_TOGGLE);
 
-    app_menu_bar->add("Help/About...",  0, menu_about_callback);
+    #ifndef __APPLE__
+        app_menu_bar->add("Help/About...",  0, menu_about_callback);
+    #endif
+
     app_window->callback(menu_quit_callback);
     app_window->end();
 }
@@ -1940,6 +1979,11 @@ int main(int argc, char **argv) {
         build_app_window();
         build_app_menu_bar();
         build_main_editor_console_listener();
+
+        #ifdef __APPLE__
+            // On macOS, register About callback with application menu
+            fl_mac_set_about(menu_about_callback, nullptr);
+        #endif
 
         if (argc > 1 && argv[1] && argv[1][0] != '-') {
             load_file_into_editor(argv[1]);
