@@ -3,9 +3,6 @@
 # Command-line Musil interpreter.
 # Uses musil.cpp and the header-only core in ../src.
 
-# No cmake_minimum_required() or project() here:
-# they are defined at the top level.
-
 add_executable(musil
     musil.cpp
 )
@@ -31,15 +28,12 @@ else()
     )
 endif()
 
-# If you need extra libs for the CLI, add them here, e.g.:
-# target_link_libraries(musil PRIVATE some_lib)
-
 #
 # Installation
 #
 # 1) Install the executable under "bin" in the install prefix.
-# 2) Install stdlib.scm under a data directory inside the prefix
-#    (e.g. ${CMAKE_INSTALL_PREFIX}/share/musil).
+# 2) Install .scm files into $HOME/.musil
+#    and, on Unix, chown them back to the invoking user if run via sudo.
 #
 
 # Install CLI binary under ${CMAKE_INSTALL_PREFIX}/bin
@@ -47,7 +41,37 @@ install(TARGETS musil
     RUNTIME DESTINATION bin
 )
 
-# Install stdlib.scm under ${CMAKE_INSTALL_PREFIX}/share/musil
-install(FILES ${CMAKE_SOURCE_DIR}/src/stdlib.scm
-    DESTINATION share/musil
+# Install .scm files into ~/.musil
+install(FILES
+    ${CMAKE_SOURCE_DIR}/src/stdlib.scm
+    ${CMAKE_SOURCE_DIR}/src/core.scm
+    # add more .scm here as you create them, e.g. scientific.scm, signals.scm
+    DESTINATION $ENV{HOME}/.musil
 )
+
+# On Unix: if install is run with sudo, chown the .scm files to $SUDO_USER
+# so the normal user can overwrite them later from the IDE.
+install(CODE "
+    if(NOT WIN32)
+      # HOME at install time (under sudo this is usually the original user's HOME)
+      set(MUSIL_HOME \"$ENV{HOME}\")
+
+      # Determine the owner we want: prefer SUDO_USER if present
+      if(DEFINED ENV{SUDO_USER} AND NOT \"\$ENV{SUDO_USER}\" STREQUAL \"\")
+        set(MUSIL_OWNER \"\$ENV{SUDO_USER}\")
+      else()
+        execute_process(
+          COMMAND whoami
+          OUTPUT_VARIABLE MUSIL_OWNER
+          OUTPUT_STRIP_TRAILING_WHITESPACE
+        )
+      endif()
+
+      file(GLOB scm_files \"\${MUSIL_HOME}/.musil/*.scm\")
+      foreach(f \${scm_files})
+        execute_process(
+          COMMAND chown \${MUSIL_OWNER} \"\${f}\"
+        )
+      endforeach()
+    endif()
+")

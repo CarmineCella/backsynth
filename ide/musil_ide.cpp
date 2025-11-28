@@ -127,6 +127,8 @@ std::atomic<bool>   g_keywords_need_update{false};
 std::mutex          g_console_mutex;
 std::queue<std::string> g_console_queue;
 
+std::string g_exe_dir;  // directory where musil_ide binary lives (non-macOS)
+
 // -----------------------------------------------------------------------------
 // Forward declarations
 // -----------------------------------------------------------------------------
@@ -458,14 +460,28 @@ void load_file_into_editor(const char *filename) {
 }
 
 static bool install_musil_libraries() {
-    std::string src_dir_str = get_resources_dir();
+    std::string src_dir_str;
+
+#ifdef __APPLE__
+    // On macOS, .scm files are inside the app bundle Resources
+    src_dir_str = get_resources_dir();
+#else
+    // On other systems, .scm files live next to the musil_ide binary
+    if (!g_exe_dir.empty())
+        src_dir_str = g_exe_dir;
+    else
+        src_dir_str = fs::current_path().string();
+#endif
+
     fs::path src_dir(src_dir_str);
 
     if (!fs::exists(src_dir) || !fs::is_directory(src_dir)) {
-        fl_alert("Resources directory not found:\n%s", src_dir_str.c_str());
+        fl_alert("Source directory for Musil libraries not found:\n%s",
+                 src_dir_str.c_str());
         return false;
     }
 
+    // Destination is always ~/.musil
     fs::path dest_dir = fs::path(get_home_directory()) / ".musil";
 
     std::error_code ec;
@@ -490,6 +506,7 @@ static bool install_musil_libraries() {
             fs::copy_file(p, dest,
                           fs::copy_options::overwrite_existing,
                           copy_ec);
+            console_append ( p.filename());
             if (!copy_ec) {
                 ++copied;
             }
@@ -497,13 +514,13 @@ static bool install_musil_libraries() {
     }
 
     if (ec) {
-        fl_alert("Error while scanning Resources directory:\n%s",
+        fl_alert("Error while scanning Musil library directory:\n%s",
                  src_dir_str.c_str());
         return false;
     }
 
     if (copied == 0) {
-        fl_alert("No .scm files found in Resources directory:\n%s",
+        fl_alert("No .scm files found in:\n%s",
                  src_dir_str.c_str());
         return false;
     }
@@ -512,6 +529,7 @@ static bool install_musil_libraries() {
                copied, dest_dir.string().c_str());
     return true;
 }
+
 
 // -----------------------------------------------------------------------------
 // Musil environment / keywords
@@ -1975,6 +1993,21 @@ int main(int argc, char **argv) {
     try {
         Fl::scheme("oxy");
         Fl::args_to_utf8(argc, argv);
+
+        try {
+            if (argc > 0 && argv[0]) {
+                fs::path exe_path = fs::path(argv[0]);
+                // canonical is nice but can fail; fallback to parent_path
+                std::error_code ec;
+                fs::path canon = fs::canonical(exe_path, ec);
+                if (!ec) exe_path = canon;
+                g_exe_dir = exe_path.parent_path().string();
+            } else {
+                g_exe_dir = fs::current_path().string();
+            }
+        } catch (...) {
+            g_exe_dir = fs::current_path().string();
+        }
 
         build_app_window();
         build_app_menu_bar();

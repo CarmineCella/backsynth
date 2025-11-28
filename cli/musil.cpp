@@ -15,6 +15,11 @@ using namespace std;
 
 YieldFunction g_yield = nullptr;
 
+#define BOLDWHITE   "\033[1m\033[37m"
+#define BOLDBLUE    "\033[1m\033[34m"
+#define RED     	"\033[31m" 
+#define RESET   	"\033[0m"
+
 int main (int argc, char* argv[]) {
 	srand (time (NULL));
 	AtomPtr env = make_env ();

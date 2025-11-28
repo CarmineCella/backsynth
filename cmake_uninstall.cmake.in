@@ -1,0 +1,79 @@
+# cmake_uninstall.cmake.in
+#
+# Generic uninstall script extended for Musil:
+# - Removes files listed in install_manifest.txt
+# - Removes ~/.musil directory
+# - Removes Musil IDE.app from /Applications (macOS)
+# - Removes installation directory on Linux/Windows if needed
+
+message(STATUS "Starting Musil uninstall...")
+
+# ------------------------------------------------------------------------------
+# 1. Remove installed files (standard CMake uninstall)
+# ------------------------------------------------------------------------------
+
+set(MANIFEST "@CMAKE_CURRENT_BINARY_DIR@/install_manifest.txt")
+
+if(NOT EXISTS "${MANIFEST}")
+    message(FATAL_ERROR "Cannot find install_manifest.txt. Have you run 'make install'?")
+endif()
+
+file(READ "${MANIFEST}" files)
+string(REGEX REPLACE "\n" ";" files "${files}")
+
+foreach(file ${files})
+    if(EXISTS "${file}" OR IS_SYMLINK "${file}")
+        message(STATUS "Removing installed file: ${file}")
+        file(REMOVE "${file}")
+    else()
+        message(STATUS "Already removed or missing: ${file}")
+    endif()
+endforeach()
+
+# ------------------------------------------------------------------------------
+# 2. Remove ~/.musil directory
+# ------------------------------------------------------------------------------
+
+if(DEFINED ENV{HOME})
+    set(MUSIL_HOME "$ENV{HOME}/.musil")
+    if(EXISTS "${MUSIL_HOME}")
+        message(STATUS "Removing directory: ${MUSIL_HOME}")
+        file(REMOVE_RECURSE "${MUSIL_HOME}")
+    else()
+        message(STATUS "~/.musil directory not present")
+    endif()
+endif()
+
+# ------------------------------------------------------------------------------
+# 3. Remove Musil IDE.app on macOS
+# ------------------------------------------------------------------------------
+
+if(APPLE)
+    set(MUSIL_APP "/Applications/musil_ide.app")
+    if(EXISTS "${MUSIL_APP}")
+        message(STATUS "Removing application bundle: ${MUSIL_APP}")
+        file(REMOVE_RECURSE "${MUSIL_APP}")
+    else()
+        message(STATUS "musil_ide.app not found in /Applications")
+    endif()
+endif()
+
+# ------------------------------------------------------------------------------
+# 4. Cleanup for Linux / Windows (optional)
+#    Remove ${CMAKE_INSTALL_PREFIX}/musil or ${CMAKE_INSTALL_PREFIX}/bin/musil
+# ------------------------------------------------------------------------------
+
+set(PREFIX "@CMAKE_INSTALL_PREFIX@")
+
+if(EXISTS "${PREFIX}/musil")
+    message(STATUS "Removing: ${PREFIX}/musil")
+    file(REMOVE_RECURSE "${PREFIX}/musil")
+endif()
+
+if(EXISTS "${PREFIX}/bin/musil")
+    message(STATUS "Removing CLI binary directory: ${PREFIX}/bin/musil")
+    # No REMOVE_RECURSE because it may contain other binaries
+    file(REMOVE "${PREFIX}/bin/musil")
+endif()
+
+message(STATUS "Musil uninstall completed.")

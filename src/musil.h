@@ -9,11 +9,7 @@
 
 #include "core.h"
 #include "system.h"
-
-#define BOLDWHITE   "\033[1m\033[37m"
-#define BOLDBLUE    "\033[1m\033[34m"
-#define RED     	"\033[31m" 
-#define RESET   	"\033[0m"
+#include "scientific.h"
 
 AtomPtr make_env (YieldFunction yield_fn = nullptr) {
     set_yield (yield_fn);
@@ -21,9 +17,8 @@ AtomPtr make_env (YieldFunction yield_fn = nullptr) {
     env->tail.push_back (make_atom ()); // no parent env
     add_core (env);
     add_system (env);
+    add_scientific (env);    
     // add_signals (env);
-    // add_learning (env);
-    // add_plotting (env);
     return env;
 }
 #endif // MUSIL_H

@@ -12,8 +12,10 @@ if(NOT FLTK_FOUND)
     message(FATAL_ERROR "FLTK not found, cannot build Musil IDE")
 endif()
 
-# Paths (relative to this CMakeLists.txt)
+# Paths to scheme files
 set(MUSIL_STDLIB_SCM "${CMAKE_SOURCE_DIR}/src/stdlib.scm")
+set(MUSIL_CORE_SCM   "${CMAKE_SOURCE_DIR}/src/core.scm")
+
 # musil.icns is in the same folder as musil_ide.cpp
 set(MUSIL_ICON_FILE "${CMAKE_CURRENT_SOURCE_DIR}/musil.icns")
 
@@ -24,7 +26,7 @@ if(APPLE)
         ${MUSIL_ICON_FILE}
     )
 
-    # Put the icon in Contents/Resources
+    # Place icon inside the bundle Resources
     set_source_files_properties(${MUSIL_ICON_FILE}
         PROPERTIES MACOSX_PACKAGE_LOCATION "Resources"
     )
@@ -35,30 +37,38 @@ if(APPLE)
         MACOSX_BUNDLE_INFO_STRING          "Musil IDE"
         MACOSX_BUNDLE_BUNDLE_VERSION       "0.1"
         MACOSX_BUNDLE_SHORT_VERSION_STRING "0.1"
-        MACOSX_BUNDLE_ICON_FILE            "musil.icns"  # filename only
+        MACOSX_BUNDLE_ICON_FILE            "musil.icns"   # filename only
     )
 
-    # Copy stdlib.scm into bundle Resources
+    # Copy stdlib.scm and core.scm into the bundle Resources after build
     set(MUSIL_RESOURCES_DIR "$<TARGET_BUNDLE_DIR:musil_ide>/Contents/Resources")
+
     add_custom_command(TARGET musil_ide POST_BUILD
         COMMAND ${CMAKE_COMMAND} -E make_directory "${MUSIL_RESOURCES_DIR}"
         COMMAND ${CMAKE_COMMAND} -E copy_if_different
             "${MUSIL_STDLIB_SCM}"
             "${MUSIL_RESOURCES_DIR}/stdlib.scm"
-        COMMENT "Copying stdlib.scm into Musil IDE.app Resources"
+        COMMAND ${CMAKE_COMMAND} -E copy_if_different
+            "${MUSIL_CORE_SCM}"
+            "${MUSIL_RESOURCES_DIR}/core.scm"
+        COMMENT "Copying stdlib.scm and core.scm into Musil IDE.app Resources"
     )
 
 else()
-    # Non-macOS build: normal executable
+    # Non-macOS: normal executable
     add_executable(musil_ide
         musil_ide.cpp
     )
 
+    # Copy stdlib.scm and core.scm next to the executable
     add_custom_command(TARGET musil_ide POST_BUILD
         COMMAND ${CMAKE_COMMAND} -E copy_if_different
             "${MUSIL_STDLIB_SCM}"
             "$<TARGET_FILE_DIR:musil_ide>/stdlib.scm"
-        COMMENT "Copying stdlib.scm next to musil_ide executable"
+        COMMAND ${CMAKE_COMMAND} -E copy_if_different
+            "${MUSIL_CORE_SCM}"
+            "$<TARGET_FILE_DIR:musil_ide>/core.scm"
+        COMMENT "Copying stdlib.scm and core.scm next to musil_ide executable"
     )
 endif()
 
@@ -84,7 +94,19 @@ endif()
 
 target_link_libraries(musil_ide PRIVATE ${FLTK_LIBRARIES})
 
-install(TARGETS musil_ide
-    RUNTIME DESTINATION bin
-    BUNDLE  DESTINATION .
-)
+#
+# Installation
+#
+# - On macOS: install Musil IDE.app into /Applications
+# - On Linux/Windows: install musil_ide binary into ${CMAKE_INSTALL_PREFIX}/bin
+#
+
+if(APPLE)
+    install(TARGETS musil_ide
+        BUNDLE DESTINATION "/Applications"
+    )
+else()
+    install(TARGETS musil_ide
+        RUNTIME DESTINATION bin
+    )
+endif()
