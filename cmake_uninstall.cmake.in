@@ -49,12 +49,12 @@ endif()
 # ------------------------------------------------------------------------------
 
 if(APPLE)
-    set(MUSIL_APP "/Applications/musil_ide.app")
+    set(MUSIL_APP "/Applications/Musil IDE.app")
     if(EXISTS "${MUSIL_APP}")
         message(STATUS "Removing application bundle: ${MUSIL_APP}")
         file(REMOVE_RECURSE "${MUSIL_APP}")
     else()
-        message(STATUS "musil_ide.app not found in /Applications")
+        message(STATUS "Musil IDE.app not found in /Applications")
     endif()
 endif()
 

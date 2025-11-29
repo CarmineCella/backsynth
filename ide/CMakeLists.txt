@@ -32,6 +32,7 @@ if(APPLE)
     )
 
     set_target_properties(musil_ide PROPERTIES
+        OUTPUT_NAME                        "Musil IDE"
         MACOSX_BUNDLE_GUI_IDENTIFIER       "com.carminecella.musil.ide"
         MACOSX_BUNDLE_BUNDLE_NAME          "Musil IDE"
         MACOSX_BUNDLE_INFO_STRING          "Musil IDE"

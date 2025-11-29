@@ -8,6 +8,7 @@
 #include <iostream>
 #include <sstream>
 #include <iomanip>
+#include <cassert>
 
 #define MAX_COLS 12
 #define MAX_ROWS 200
@@ -102,6 +103,17 @@ public:
     const T* operator[](int r) const { return _m[r]; }    
     T** data () { return _m; }
     const T** data () const { return _m; }
+    std::vector<T> flatten_row_major() const {
+        std::vector<T> out;
+        out.reserve(_rows * _cols);
+
+        for (std::size_t i = 0; i < _rows; ++i) {
+            for (std::size_t j = 0; j < _cols; ++j) {
+                out.push_back(_m[i][j]);
+            }
+        }
+        return out;
+    } 
     Matrix get_rows(int start, int end) { 
         assert(start < _rows && end < _rows);
         Matrix temp(end-start+1, _cols);
@@ -167,7 +179,7 @@ public:
         for (unsigned i = 0; i < _rows; ++i) _m[i][i] = 1;
     }    
     Matrix operator+(const Matrix & rhs) const { // sum two same sized matrices
-        assert(_rows == rhs.getRows() && _cols == rhs.getCols());
+        assert(_rows == rhs.rows() && _cols == rhs.cols());
         Matrix res(_rows, _cols);
         for (int i = 0; i < _rows; i++) {
             for (int j = 0; j < _cols; j++) {
@@ -177,7 +189,7 @@ public:
         return res;
     }
     Matrix operator-(const Matrix & rhs) const { // subtract two same sized matrices
-        assert(_rows == rhs.getRows() && _cols == rhs.getCols());
+        assert(_rows == rhs.rows() && _cols == rhs.cols());
         Matrix res(_rows, _cols);
         for (int i = 0; i < _rows; i++) {
             for (int j = 0; j < _cols; j++) {

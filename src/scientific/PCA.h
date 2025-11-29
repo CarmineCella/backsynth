@@ -1,189 +1,187 @@
+// PCA.h
+
 #ifndef PCA_H
 #define PCA_H
 
-#include <iostream>
+#include <vector>
 #include <cmath>
+#include <stdexcept>
+#include <algorithm>
 
-using namespace std;
+// Simple PCA via covariance + Jacobi eigen-decomposition.
+//
+// API matches your usage in scientific.h:
+//
+//   Matrix<Real> eigm(a.cols(), a.cols() + 1, 0); // rows = dims, cols+1 (eigs)
+//   PCA<Real>(a.data(), eigm.data(), a.cols(), a.rows());
+//
+// where:
+//   - data: pointer to row-major matrix with `rows` rows, `cols` columns
+//   - eig_out: pointer to row-major (cols × (cols+1)) buffer:
+//       row i: [eigenvector_i (size cols), eigenvalue_i]
+//
+// NOTE: This is not meant to be a production-grade PCA, but is fine for
+//       moderate dimensionalities and your scientific library.
 
-template <class T>
-T** jabobian(T** input, const int N, const int i, const int j, const T rPhi) {
-    T rSp = sin(rPhi);
-    T rCp = cos(rPhi);
-    T** temp = new T*[N];
-    for(int ii = 0; ii < N; ++ii)
-        temp[ii] = new T[N];
-    for(int ii = 0; ii < N; ++ii)
-        for(int jj = 0; jj < N; ++jj) {
-            temp[ii][jj] = input[ii][jj];
-            input[ii][jj] = (T)0;
+template <typename T>
+void PCA(const T* data,
+         T* eig_out,
+         int cols,
+         int rows,
+         int max_iter = 50,
+         T tol = static_cast<T>(1e-9))
+{
+    if (!data || !eig_out) {
+        throw std::invalid_argument("[PCA] null pointer argument");
+    }
+    if (cols <= 0 || rows <= 0) {
+        throw std::invalid_argument("[PCA] invalid rows/cols");
+    }
+
+    // 1) Compute column means
+    std::vector<T> mean(cols, T(0));
+    for (int i = 0; i < rows; ++i) {
+        const T* row = data + i * cols;
+        for (int j = 0; j < cols; ++j) {
+            mean[j] += row[j];
         }
+    }
+    T invN = static_cast<T>(1) / static_cast<T>(rows);
+    for (int j = 0; j < cols; ++j) {
+        mean[j] *= invN;
+    }
 
-    for(long ii = 0; ii < N; ++ii) {
-        for(long jj = 0; jj < N; ++jj) {
-            if( ii == i ) {  // row i
-                if( jj == i ) input[ii][jj] = temp[i][i] * rCp * rCp + temp[j][j] * rSp * rSp + 2 * temp[i][j] * rCp * rSp;
-                else if( jj == j ) input[ii][jj] = (temp[j][j] - temp[i][i]) * rSp * rCp + temp[i][j] * (rCp * rCp - rSp * rSp);
-                else input[ii][jj] = temp[i][jj] * rCp + temp[j][jj] * rSp;
-            } else if ( ii == j ) { // row j
-                if( jj == i ) input[ii][jj] = (temp[j][j] - temp[i][i]) * rSp * rCp + temp[i][j] * (rCp * rCp - rSp * rSp);
-                else if( jj == j ) input[ii][jj] = temp[i][i] * rSp * rSp + temp[j][j] * rCp * rCp - 2 * temp[i][j] * rCp * rSp;
-                else input[ii][jj] = temp[j][jj] * rCp - temp[i][jj] * rSp;
-            } else {            // row l ( l!=i,j )
-                if( jj == i ) input[ii][jj] = temp[i][ii] * rCp + temp[j][ii] * rSp;
-                else if( jj == j ) input[ii][jj] = temp[j][ii] * rCp - temp[i][ii] * rSp;
-                else input[ii][jj] = temp[ii][jj];
+    // 2) Compute covariance matrix (cols × cols, row-major)
+    std::vector<T> cov(cols * cols, T(0));
+
+    for (int i = 0; i < rows; ++i) {
+        const T* row = data + i * cols;
+        // centered row
+        std::vector<T> xc(cols);
+        for (int j = 0; j < cols; ++j) {
+            xc[j] = row[j] - mean[j];
+        }
+        for (int j = 0; j < cols; ++j) {
+            for (int k = j; k < cols; ++k) {
+                cov[j * cols + k] += xc[j] * xc[k];
             }
         }
     }
 
-    for(int ii = 0; ii < N; ++ii) delete [] temp[ii];
-    delete [] temp;
+    T denom = static_cast<T>(rows - 1);
+    if (denom <= static_cast<T>(0)) {
+        denom = static_cast<T>(1);
+    }
 
-    return input;
-}
+    for (int j = 0; j < cols; ++j) {
+        for (int k = j; k < cols; ++k) {
+            T v = cov[j * cols + k] / denom;
+            cov[j * cols + k] = v;
+            cov[k * cols + j] = v; // symmetry
+        }
+    }
 
-template <class T>
-T get_max (T** input, const int N, int &nRow, int &nCol) {
-    T rMax = input[0][1];
-    nRow = 0;
-    nCol = 1;
+    // 3) Jacobi eigen-decomposition for symmetric cov
+    std::vector<T> eigvec(cols * cols, T(0));
+    std::vector<T> eigval(cols, T(0));
 
-    for (int i = 0; i < N; ++i) {
-        for (int j = 0; j < N; ++j) {
-            if (i != j) {
-                if( abs(input[i][j]) > rMax ) {
-                    rMax = abs(input[i][j]);
-                    nRow = i ;
-                    nCol = j ;
+    // Initialize eigvec as identity
+    for (int i = 0; i < cols; ++i) {
+        eigvec[i * cols + i] = static_cast<T>(1);
+    }
+
+    auto max_offdiag = [&](int& p, int& q) -> T {
+        T max_val = static_cast<T>(0);
+        p = 0;
+        q = 1;
+        for (int i = 0; i < cols; ++i) {
+            for (int j = i + 1; j < cols; ++j) {
+                T v = std::fabs(cov[i * cols + j]);
+                if (v > max_val) {
+                    max_val = v;
+                    p = i;
+                    q = j;
                 }
             }
         }
-    }
-    return rMax;
-}
+        return max_val;
+    };
 
-template <class T>
-void PCA(T** Data, T** eigen_vectors, const int M, const int N, const T Err = 0.00001) {
-    T*  average     = new T[M] ;
-    T** temp_data    = new T*[N]; //[N][M]
-    T** S           = new T*[M]; //[M][M]
-    T*  eigen_values  = new T[M];
-    T** eTemp       = new T*[M]; //[M][M]
-    T** eVec        = new T*[M]; //[M][M]
-    T** eC          = new T*[M]; //[M][M]
-
-
-    for(int i = 0; i < N; ++i) {
-        temp_data[i] = new T[M];
-    }
-    for(int i = 0; i < M; ++i) {
-        S[i]            = new T[M];
-        eTemp[i]        = new T[M];
-        eVec[i]         = new T[M];
-        eC[i]           = new T[M];
-    }
-
-    for(int i = 0; i < M; ++i) {
-        average[i] = (T)0;
-    }
-    for(int i = 0; i < N; ++i) {
-        for(int j = 0; j < M; ++j) {
-            temp_data[i][j] = Data[i][j];
+    for (int iter = 0; iter < max_iter; ++iter) {
+        int p = 0, q = 0;
+        T off = max_offdiag(p, q);
+        if (off < tol) {
+            break;
         }
-    }
-    for(int i = 0; i < M; ++i) {
-        for(int j = 0; j < M; ++j) {
-            S[i][j] = eigen_vectors[i][j + 1] = eVec[i][j] = eC[i][j] = (T)0;
-        }
-    }
-    for(int i = 0; i < M; ++i) {
-        for(int j = 0; j < M; ++j) {
-            eTemp[i][j] = (T)0;
-            if(i == j)
-                eTemp[i][j] = (T)1;
-        }
-    }
-    for(int i = 0; i < M; ++i) eigen_values[i] = (T)0;
 
-    for(int i = 0; i < M; ++i) {
-        for(int j = 0; j < M; ++j) {
-            for(int k = 0; k < N; ++k) {
-                S[i][j] += temp_data[k][i] * temp_data[k][j] / (T)N;
-            }
+        T app = cov[p * cols + p];
+        T aqq = cov[q * cols + q];
+        T apq = cov[p * cols + q];
+
+        // Jacobi rotation
+        T tau = (aqq - app) / (2 * apq);
+        T t   = ((tau >= 0) ? 1 : -1) /
+                (std::fabs(tau) + std::sqrt(static_cast<T>(1) + tau * tau));
+        T c   = static_cast<T>(1) / std::sqrt(static_cast<T>(1) + t * t);
+        T s   = t * c;
+
+        // Update covariance matrix
+        for (int k = 0; k < cols; ++k) {
+            if (k == p || k == q) continue;
+
+            T aik = cov[p * cols + k];
+            T ajk = cov[q * cols + k];
+            cov[p * cols + k] = c * aik - s * ajk;
+            cov[k * cols + p] = cov[p * cols + k];
+            cov[q * cols + k] = s * aik + c * ajk;
+            cov[k * cols + q] = cov[q * cols + k];
+        }
+
+        T app_new = c * c * app - 2 * s * c * apq + s * s * aqq;
+        T aqq_new = s * s * app + 2 * s * c * apq + c * c * aqq;
+        cov[p * cols + p] = app_new;
+        cov[q * cols + q] = aqq_new;
+        cov[p * cols + q] = cov[q * cols + p] = static_cast<T>(0);
+
+        // Update eigenvectors
+        for (int k = 0; k < cols; ++k) {
+            T vip = eigvec[k * cols + p];
+            T viq = eigvec[k * cols + q];
+            eigvec[k * cols + p] = c * vip - s * viq;
+            eigvec[k * cols + q] = s * vip + c * viq;
         }
     }
 
-    while(true) {
-        int i = 0, j = 0;
-        T rMax = get_max(S, M, i, j);
-        if(rMax <= Err) break;
-
-        T rPhi = atan2((T)2 * S[i][j], S[i][i] - S[j][j]) / (T)2;
-        S = jabobian(S, M, i, j, rPhi);
-        for(int x = 0; x < M; ++x) {
-            eC[x][x] = (T)1;
-        }
-        eC[j][j] = eC[i][i] = cos(rPhi);
-        eC[j][i] = sin(rPhi);
-        eC[i][j] = -eC[j][i];
-
-        for(int x = 0; x < M; ++x) { // for eigenvectors
-            for(int y = 0; y < M; ++y) {
-                for(int z = 0; z < M; ++z) {
-                    eVec[x][y] = eVec[x][y] + eTemp[x][z] * eC[z][y];
-                }
-            }
-        }
-
-        for(int x = 0; x < M; ++x) {
-            for(int y = 0; y < M; ++y) {
-                eTemp[x][y] = eVec[x][y];
-                eVec[x][y]  = (T)0;
-                eC[x][y]    = (T)0;
-            }
-        }
+    // Extract eigenvalues from diagonal of cov
+    for (int i = 0; i < cols; ++i) {
+        eigval[i] = cov[i * cols + i];
     }
 
-    for(int i = 0; i < M; ++i) eigen_values[i] = eigen_vectors[i][M] = S[i][i];
-    for(int i = 0; i < M; ++i) {
-        for(int j = 0; j < M; ++j) {
-            eigen_vectors[i][j] = eTemp[j][i];
+    // Sort components by descending eigenvalue
+    std::vector<int> idx(cols);
+    for (int i = 0; i < cols; ++i) idx[i] = i;
+
+    std::sort(idx.begin(), idx.end(),
+              [&](int a, int b) { return eigval[a] > eigval[b]; });
+
+    // Fill eig_out as rows:
+    // row i: [ eigenvector_i (size cols), eigenvalue_i ]
+    // where i is in sorted order.
+    for (int r = 0; r < cols; ++r) {
+        int comp = idx[r];
+        // eigenvector: component comp
+        for (int c = 0; c < cols; ++c) {
+            // eigvec is stored as [row, col] -> row * cols + col;
+            // columns of eigvec are eigenvectors of cov in this convention.
+            // We want the "comp"-th eigenvector as row r.
+            eig_out[r * (cols + 1) + c] = eigvec[c * cols + comp];
         }
+        // eigenvalue
+        eig_out[r * (cols + 1) + cols] = eigval[comp];
     }
-
-    T* temp_eigen_vectors = new T[M];
-
-    for(int i = 0; i < M; ++i) {
-        for(int j = i; j < M - 1; ++j) {
-            if(eigen_values[j] < eigen_values[j + 1]) {
-                T TempEigenValue = eigen_values[j + 1];
-                eigen_values[j + 1] = eigen_vectors[j + 1][M] = eigen_values[j];
-                eigen_values[j]  = eigen_vectors[j][M]  = TempEigenValue;
-                for(int k = 0; k < M; ++k) temp_eigen_vectors[k]  = eigen_vectors[j + 1][k];
-                for(int k = 0; k < M; ++k) eigen_vectors[j + 1][k] = eigen_vectors[j][k];
-                for(int k = 0; k < M; ++k)eigen_vectors[j][k]   = temp_eigen_vectors[k];
-            }
-        }
-    }
-
-    delete [] temp_eigen_vectors;
-    delete [] average ;
-    delete [] eigen_values ;
-
-    for(int i = 0; i < N; ++i) delete [] temp_data[i];
-    delete [] temp_data;
-
-    for(int i = 0; i < M; ++i) {
-        delete [] S[i];
-        delete [] eTemp[i];
-        delete [] eVec[i];
-        delete [] eC[i];
-    }
-    delete [] S;
-    delete [] eTemp;
-    delete [] eVec;
-    delete [] eC;
 }
 
 #endif // PCA_H
+
+// EOF
+

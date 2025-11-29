@@ -21,6 +21,7 @@
 #include<sys/socket.h>
 #include<arpa/inet.h>
 
+// helpers
 static std::string get_musilrc_path() {
     std::string home = get_home_directory();
     if (!home.empty() && home.back() != '/' && home.back() != '\\') {
@@ -57,6 +58,7 @@ void save_env_paths (AtomPtr env) {
     out.close ();
 }
 
+// system functions
 AtomPtr fn_schedule(AtomPtr node, AtomPtr env) {
     args_check(node, 2);
     AtomPtr thunk     = type_check(node->tail.at(0), LAMBDA);
@@ -253,6 +255,8 @@ AtomPtr fn_udpsend (AtomPtr n, AtomPtr env) {
     ::close (sock);
     return  make_atom (1);
 }
+
+// interface
 AtomPtr add_system (AtomPtr env) {
     add_op ("%schedule", &fn_schedule, 2, env);
     add_op ("sleep",  &fn_sleep,   1, env);

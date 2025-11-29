@@ -1,133 +1,127 @@
 // KNN.h
-// 
 
 #ifndef KNN_H
-#define KNN_H 
+#define KNN_H
 
-#include <vector>
 #include <valarray>
+#include <vector>
+#include <string>
+#include <algorithm>
 #include <limits>
 #include <stdexcept>
-#include <string>
-#include <cmath>
+#include <unordered_map>
 
-#include <iostream>
-
+// ---------------------------------------------------------
+// Observation<T>: feature vector + class label
+// ---------------------------------------------------------
 template <typename T>
-//! Basic structure to describe data observations
 struct Observation {
-	Observation () : classlabel ("") {}
-	
-	std::valarray<T> attributes;
-	std::string classlabel;
+    std::valarray<T> attributes;
+    std::string      classlabel;
 };
 
+// ---------------------------------------------------------
+// KNN<T>: simple k-nearest-neighbor classifier
+//   - owns the Observation<T>* it is given
+//   - k: number of neighbors
+//   - n_features: dimensionality of the feature space
+// ---------------------------------------------------------
 template <typename T>
-struct Item {
-	Item () : distance (0), classlabel ("") {}
-	T distance;
-	std::string classlabel;
-};
-
-template <typename T> //, template <typename X> class DistanceType>
-//! Data clustering by means of K-nearest neighbours
 class KNN {
-private:
-	KNN& operator= (KNN&);
-	KNN (const KNN&);
-public: 
-	KNN (int K, int features) {
-		m_K = K;
-		m_features = features;
-		
-		m_freq = new int[m_K];
-		memset (m_freq, 0, sizeof (int) * m_K);
-		
-		m_knn = new Item<T>[m_K];
-		memset (m_knn, 0, sizeof (Item<T>) * m_K);
-	}
-	virtual ~KNN () {
-		for (unsigned i = 0; i < m_trainingSet.size (); ++i) delete m_trainingSet[i];
-		delete [] m_freq;
-		delete [] m_knn;
-	}
-	
-	unsigned int addObservation (Observation<T>* v) {
-		if (v->attributes.size () != m_features) {
-			throw std::runtime_error ("invalid number of features for the given observation");
-			
-		}
-		m_trainingSet.push_back (v);
-		return m_trainingSet.size ();
-	}
-	unsigned int samples () const {
-		return m_trainingSet.size ();
-	}
-	std::string classify (const Observation<T>& v) {
-		T dd = 0;
-		int maxn = 0;
-		std::string mfreqC;
-		memset (m_freq, 0, sizeof (int) * m_K);
-		
-		for (int i = 0; i < m_K; ++i) m_knn[i].distance = std::numeric_limits<T>::max ();
-		for (unsigned int i = 0; i < m_trainingSet.size (); ++i) {
-			dd = distance (&m_trainingSet[i]->attributes[0], &v.attributes[0], m_features);
-			maxn = max (m_knn);
-			if (dd < m_knn[maxn].distance) {
-				m_knn[maxn].distance = dd;
-				m_knn[maxn].classlabel = m_trainingSet[i]->classlabel;
-			}
-		}
-		for (int i = 0; i < m_K; ++i) m_freq[i] = 1;
-		
-		for (int i = 0; i < m_K; ++i) {
-			for (int j = 0; j < m_K; ++j) {
-				if ((i != j) && (m_knn[i].classlabel == m_knn[j].classlabel)) {
-					m_freq[i] += 1;
-				}
-			}
-		}
-		
-		int mfreq = 1;
-		mfreqC = m_knn[0].classlabel;
-		
-		for (int i = 0; i < m_K; ++i) {
-			if (m_freq[i] > mfreq)  {
-				mfreq = m_freq[i];
-				mfreqC = m_knn[i].classlabel;
-			}
-		}
-		return mfreqC;
-	}
+public:
+    KNN(int k, int n_features)
+        : m_k(k), m_n_features(n_features)
+    {
+        if (m_k <= 0) {
+            throw std::invalid_argument("[KNN] k must be > 0");
+        }
+        if (m_n_features <= 0) {
+            throw std::invalid_argument("[KNN] n_features must be > 0");
+        }
+    }
 
-	Item<T>* m_knn;
-protected:
-	std::vector<Observation<T>*> m_trainingSet;
-	int m_K;
-	int* m_freq;
-	int m_features;
-	
+    ~KNN() {
+        for (auto* o : m_observations) {
+            delete o;
+        }
+    }
+
+    void addObservation(Observation<T>* o) {
+        if (!o) {
+            throw std::invalid_argument("[KNN] null observation");
+        }
+        if (static_cast<int>(o->attributes.size()) != m_n_features) {
+            throw std::runtime_error("[KNN] observation dimension mismatch");
+        }
+        m_observations.push_back(o);
+    }
+
+    std::string classify(const Observation<T>& query) const {
+        if (m_observations.empty()) {
+            throw std::runtime_error("[KNN] no observations in model");
+        }
+        if (static_cast<int>(query.attributes.size()) != m_n_features) {
+            throw std::runtime_error("[KNN] query dimension mismatch");
+        }
+
+        const int k_eff = std::min(m_k, static_cast<int>(m_observations.size()));
+
+        // (distance^2, index) pairs
+        std::vector<std::pair<T, int>> dists;
+        dists.reserve(m_observations.size());
+
+        for (std::size_t i = 0; i < m_observations.size(); ++i) {
+            const auto* obs = m_observations[i];
+            if (obs->attributes.size() != query.attributes.size()) {
+                throw std::runtime_error("[KNN] stored observation with wrong size");
+            }
+
+            T acc = 0;
+            for (std::size_t j = 0; j < query.attributes.size(); ++j) {
+                T d = query.attributes[j] - obs->attributes[j];
+                acc += d * d;
+            }
+            dists.emplace_back(acc, static_cast<int>(i));
+        }
+
+        std::nth_element(dists.begin(),
+                         dists.begin() + k_eff,
+                         dists.end(),
+                         [](const auto& a, const auto& b) {
+                             return a.first < b.first;
+                         });
+
+        // Vote among k nearest neighbors
+        std::unordered_map<std::string, int> votes;
+        votes.reserve(k_eff * 2);
+
+        for (int i = 0; i < k_eff; ++i) {
+            const auto& pair  = dists[i];
+            const auto* obs   = m_observations[pair.second];
+            votes[obs->classlabel] += 1;
+        }
+
+        // Select label with maximum vote (ties broken arbitrarily)
+        std::string best_label;
+        int best_count = -1;
+        for (const auto& kv : votes) {
+            if (kv.second > best_count) {
+                best_count = kv.second;
+                best_label = kv.first;
+            }
+        }
+
+        return best_label;
+    }
+
 private:
-	T distance (const T* v1, const T* v2, int size) {
-		T d = 0.0;
-		T tem = 0.0;
-		for (int i = 0; i < size; ++i) {
-			tem += (v1[i] - v2[i]) * (v1[i] - v2[i]);
-		}
-		d = std::sqrt (tem);
-		return d;
-	}
-	int max (Item<T>* knn)	{
-		int maxNo = 0;
-		if (m_K > 1){
-			for (int i = 1; i < m_K; ++i) {
-				if (knn[i].distance > knn[maxNo].distance) maxNo = i;
-			}
-		}
-		return maxNo;
-	}    
+    int m_k;
+    int m_n_features;
+    std::vector<Observation<T>*> m_observations;
 };
 
-#endif	// KNN_H 
+#endif // KNN_H
 
-// EOF
+// eof
+
+
