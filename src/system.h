@@ -1,7 +1,9 @@
-// system.h -- system library for Musil
+// system.h
 //
 
-#include "musil.h"
+// System library for Musil
+
+#include "core.h"
 
 #include <fstream>
 #include <vector>

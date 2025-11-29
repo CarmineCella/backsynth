@@ -17,6 +17,7 @@
 #include "scientific/KNN.h"
 #include "scientific/Matrix.h"
 #include "scientific/PCA.h"
+#include "scientific/BPF.h" 
 
 #include <valarray>
 #include <string>
@@ -166,6 +167,7 @@ AtomPtr fn_matget(AtomPtr node, AtomPtr env) {
     }
     return matrix2list(b);
 }
+
 AtomPtr fn_eye(AtomPtr node, AtomPtr env) {
     int n = (int)type_check(node->tail.at(0), ARRAY)->array[0];
     if (n <= 0) {
@@ -175,7 +177,94 @@ AtomPtr fn_eye(AtomPtr node, AtomPtr env) {
     e.id();
     return matrix2list(e);
 }
+AtomPtr fn_rand(AtomPtr node, AtomPtr env) {
+    (void)env;
+    const std::size_t nargs = node->tail.size();
+    if (nargs < 1 || nargs > 2) {
+        error("[rand] expects 1 or 2 numeric arguments", node);
+    }
+    AtomPtr len_atom = type_check(node->tail.at(0), ARRAY);
+    int len = static_cast<int>(len_atom->array[0]);
+    if (len <= 0) {
+        error("[rand] length must be positive", node);
+    }
+    int rows = 1;
+    if (nargs == 2) {
+        AtomPtr rows_atom = type_check(node->tail.at(1), ARRAY);
+        rows = static_cast<int>(rows_atom->array[0]);
+        if (rows <= 0) {
+            error("[rand] number of rows must be positive", node);
+        }
+    }
+    if (rows == 1) {
+        std::valarray<Real> out((Real)0, (std::size_t)len);
+        for (int i = 0; i < len; ++i) {
+            out[(std::size_t)i] = ((Real)std::rand() / (Real)RAND_MAX) * (Real)2.0 - (Real)1.0;
+        }
+        return make_atom(out);
+    } else {
+        AtomPtr l = make_atom(); // LIST
+        for (int j = 0; j < rows; ++j) {
+            std::valarray<Real> out((Real)0, (std::size_t)len);
+            for (int i = 0; i < len; ++i) {
+                out[(std::size_t)i] = ((Real)std::rand() / (Real)RAND_MAX) * (Real)2.0 - (Real)1.0;
+            }
+            l->tail.push_back(make_atom(out));
+        }
+        return l;
+    }
+}
+AtomPtr fn_bpf(AtomPtr node, AtomPtr env) {
+    (void)env;
 
+    const std::size_t nargs = node->tail.size();
+    if (nargs < 3) {
+        error("[bpf] requires at least 3 arguments: init, len0, end0", node);
+    }
+
+    // First segment: init, len0, end0
+    Real init = type_check(node->tail.at(0), ARRAY)->array[0];
+    int  len0 = static_cast<int>(type_check(node->tail.at(1), ARRAY)->array[0]);
+    Real end0 = type_check(node->tail.at(2), ARRAY)->array[0];
+
+    if (len0 <= 0) {
+        error("[bpf] segment length must be positive", node);
+    }
+
+    // Remaining arguments must come in (len, end) pairs
+    std::size_t remaining = nargs - 3;
+    if (remaining % 2 != 0) {
+        error("[bpf] invalid number of arguments (expected pairs of len/end after first segment)", node);
+    }
+
+    BPF<Real> bpf(len0);
+    bpf.add_segment(init, len0, end0);
+
+    Real curr = end0;
+    std::size_t n_extra = remaining / 2;
+
+    for (std::size_t i = 0; i < n_extra; ++i) {
+        // Index into the tail after the first 3 args:
+        // arg index = 3 + 2*i (len) and 3 + 2*i + 1 (end)
+        AtomPtr len_atom = type_check(node->tail.at(3 + 2 * i), ARRAY);
+        AtomPtr end_atom = type_check(node->tail.at(3 + 2 * i + 1), ARRAY);
+
+        int  seg_len  = static_cast<int>(len_atom->array[0]);
+        Real seg_end  = end_atom->array[0];
+
+        if (seg_len <= 0) {
+            error("[bpf] segment length must be positive", node);
+        }
+
+        bpf.add_segment(curr, seg_len, seg_end);
+        curr = seg_end;
+    }
+
+    std::valarray<Real> out;
+    bpf.process(out);
+
+    return make_atom(out);
+}
 AtomPtr fn_inv(AtomPtr node, AtomPtr env) {
     Matrix<Real> a = list2matrix(type_check(node->tail.at(0), LIST));
     if (a.rows() != a.cols()) {
@@ -328,6 +417,57 @@ AtomPtr fn_solve(AtomPtr node, AtomPtr env) { // solve Ax = b for square A and v
 
     return make_atom(x);
 }
+AtomPtr fn_matcol(AtomPtr node, AtomPtr env) {
+    (void)env;
+
+    if (node->tail.size() < 2) {
+        error("[matcol] expects matrix and column index", node);
+    }
+
+    Matrix<Real> a = list2matrix(type_check(node->tail.at(0), LIST));
+    std::valarray<Real>& idx_arr = type_check(node->tail.at(1), ARRAY)->array;
+    if (idx_arr.size() < 1) {
+        error("[matcol] column index must be a scalar array", node);
+    }
+
+    int col = static_cast<int>(idx_arr[0]);
+    if (col < 0 || col >= static_cast<int>(a.cols())) {
+        error("[matcol] column index out of range", node);
+    }
+
+    const std::size_t rows = a.rows();
+    std::valarray<Real> out((Real)0, rows);
+    for (std::size_t i = 0; i < rows; ++i) {
+        out[i] = a(i, (std::size_t)col);
+    }
+
+    return make_atom(out);
+}
+AtomPtr fn_stack2(AtomPtr node, AtomPtr env) {
+    (void)env; // given two arrays x, y of same length, build an N x 2 matrix.
+
+    if (node->tail.size() < 2) {
+        error("[stack2] expects two arrays x and y", node);
+    }
+
+    std::valarray<Real>& x = type_check(node->tail.at(0), ARRAY)->array;
+    std::valarray<Real>& y = type_check(node->tail.at(1), ARRAY)->array;
+
+    if (x.size() != y.size()) {
+        error("[stack2] x and y must have the same length", node);
+    }
+
+    const std::size_t n = x.size();
+    Matrix<Real> m(n, 2);
+
+    for (std::size_t i = 0; i < n; ++i) {
+        m(i, 0) = x[i];
+        m(i, 1) = y[i];
+    }
+
+    return matrix2list(m);
+}
+
 // simple statistics
 AtomPtr fn_median(AtomPtr node, AtomPtr env) {
     std::valarray<Real>& v = type_check(node->tail.at(0), ARRAY)->array;
@@ -756,13 +896,17 @@ AtomPtr add_scientific(AtomPtr env) {
     add_op("getcols",  fn_matget<1>, 3, env);
     add_op("transpose", fn_mattran, 1, env);
 
-    // Matrix construction / decomposition
+    // Matrix/array construction / decomposition
     add_op("eye",      fn_eye,      1, env);
+    add_op("rand",     fn_rand,     1, env); 
+    add_op("bpf",      fn_bpf,      3, env);  
     add_op("inv",      fn_inv,      1, env);
     add_op("det",      fn_det,      1, env);
     add_op("diag",     fn_diag,     1, env);
     add_op("rank",     fn_rank,     1, env);
     add_op("solve",    fn_solve,    2, env);
+    add_op("matcol",   fn_matcol,   2, env); 
+    add_op("stack2",   fn_stack2,   2, env);
 
     // Statistics / filters
     add_op("median",   fn_median,   2, env);

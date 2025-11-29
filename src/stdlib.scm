@@ -4,6 +4,7 @@
 ;;
 
 (load "core.scm")
+(load "scientific.scm")
 
 ;; eof
 

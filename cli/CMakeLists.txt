@@ -45,7 +45,7 @@ install(TARGETS musil
 install(FILES
     ${CMAKE_SOURCE_DIR}/src/stdlib.scm
     ${CMAKE_SOURCE_DIR}/src/core.scm
-    # add more .scm here as you create them, e.g. scientific.scm, signals.scm
+    ${CMAKE_SOURCE_DIR}/src/scientific.scm
     DESTINATION $ENV{HOME}/.musil
 )
 
@@ -66,7 +66,7 @@ install(CODE "
           OUTPUT_STRIP_TRAILING_WHITESPACE
         )
       endif()
-
+        
       file(GLOB scm_files \"\${MUSIL_HOME}/.musil/*.scm\")
       foreach(f \${scm_files})
         execute_process(

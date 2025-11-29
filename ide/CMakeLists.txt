@@ -15,6 +15,7 @@ endif()
 # Paths to scheme files
 set(MUSIL_STDLIB_SCM "${CMAKE_SOURCE_DIR}/src/stdlib.scm")
 set(MUSIL_CORE_SCM   "${CMAKE_SOURCE_DIR}/src/core.scm")
+set(MUSIL_SCI_SCM   "${CMAKE_SOURCE_DIR}/src/scientific.scm")
 
 # musil.icns is in the same folder as musil_ide.cpp
 set(MUSIL_ICON_FILE "${CMAKE_CURRENT_SOURCE_DIR}/musil.icns")
@@ -41,7 +42,7 @@ if(APPLE)
         MACOSX_BUNDLE_ICON_FILE            "musil.icns"   # filename only
     )
 
-    # Copy stdlib.scm and core.scm into the bundle Resources after build
+    # Copy libraries into the bundle Resources after build
     set(MUSIL_RESOURCES_DIR "$<TARGET_BUNDLE_DIR:musil_ide>/Contents/Resources")
 
     add_custom_command(TARGET musil_ide POST_BUILD
@@ -52,7 +53,10 @@ if(APPLE)
         COMMAND ${CMAKE_COMMAND} -E copy_if_different
             "${MUSIL_CORE_SCM}"
             "${MUSIL_RESOURCES_DIR}/core.scm"
-        COMMENT "Copying stdlib.scm and core.scm into Musil IDE.app Resources"
+        COMMAND ${CMAKE_COMMAND} -E copy_if_different
+            "${MUSIL_SCI_SCM}"
+            "${MUSIL_RESOURCES_DIR}/scientific.scm"            
+        COMMENT "Copying libraries into Musil IDE.app Resources"
     )
 
 else()
@@ -61,7 +65,7 @@ else()
         musil_ide.cpp
     )
 
-    # Copy stdlib.scm and core.scm next to the executable
+    # Copy libraries next to the executable
     add_custom_command(TARGET musil_ide POST_BUILD
         COMMAND ${CMAKE_COMMAND} -E copy_if_different
             "${MUSIL_STDLIB_SCM}"
@@ -69,7 +73,10 @@ else()
         COMMAND ${CMAKE_COMMAND} -E copy_if_different
             "${MUSIL_CORE_SCM}"
             "$<TARGET_FILE_DIR:musil_ide>/core.scm"
-        COMMENT "Copying stdlib.scm and core.scm next to musil_ide executable"
+        COMMAND ${CMAKE_COMMAND} -E copy_if_different
+            "${MUSIL_SCI_SCM}"
+            "$<TARGET_FILE_DIR:musil_ide>/scientific.scm"            
+        COMMENT "Copying libraries next to musil_ide executable"
     )
 endif()
 

@@ -289,6 +289,53 @@
 ;; knn returns one label per query
 (test (quote (llength KNN_RES)) 2)
 
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;; matcol tests
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+(def MC_M
+  (list
+    (array 1 2 3)
+    (array 4 5 6)
+    (array 7 8 9)))
+
+(test (quote (matcol MC_M (array 0))) (array 1 4 7))
+(test (quote (matcol MC_M (array 1))) (array 2 5 8))
+(test (quote (matcol MC_M (array 2))) (array 3 6 9))
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;; stack2 tests
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+(def ST_X (array 10 20 30))
+(def ST_Y (array  1  2  3))
+
+(def ST_EXPECT
+  (list
+    (array 10 1)
+    (array 20 2)
+    (array 30 3)))
+
+(test (quote (stack2 ST_X ST_Y)) ST_EXPECT)
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;; bpf tests
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+;; Single segment: 0 → 1 in 4 steps
+(def BPF1_EXPECT (array 0 0.25 0.5 0.75))
+(test (quote (bpf (array 0) (array 4) (array 1))) BPF1_EXPECT)
+
+;; Two segments:
+;;  0 → 1, len=4:   0, 0.25, 0.5, 0.75
+;;  1 → 0, len=4:   1, 0.75, 0.5, 0.25
+(def BPF2_EXPECT (array 0 0.25 0.5 0.75 1 0.75 0.5 0.25))
+
+(test (quote (bpf (array 0) (array 4) (array 1)
+                  (array 4) (array 0)))
+      BPF2_EXPECT)
+
+
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;; Report
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
